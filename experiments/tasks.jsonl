@@ -1,0 +1,14 @@
+// Experiment task list. One JSON object per line.
+// gold_source: "by_construction" = fixture repo we authored, gold is known
+//              "manual"          = real repo (mindmap); gold intentionally
+//                                  LEFT EMPTY — to be annotated by a human.
+//                                  Never fabricate real-repo ground truth.
+{"id": "fx-locate-title", "task_type": "locate", "target_repo": "experiments/fixtures/fixture_repo", "query": "系统标题在哪里修改", "gold": {"files": ["src/app/layout.tsx"]}, "gold_source": "by_construction"}
+{"id": "fx-locate-login", "task_type": "locate", "target_repo": "experiments/fixtures/fixture_repo", "query": "登录验证的逻辑在哪里", "gold": {"files": ["src/lib/auth.ts", "src/app/login/page.tsx"]}, "gold_source": "by_construction"}
+{"id": "fx-impact-retry", "task_type": "impact", "target_repo": "experiments/fixtures/fixture_repo", "query": "修改 generateWithRetry 会影响什么", "gold": {"target_symbol": "generateWithRetry", "affected": [{"file": "src/lib/ai-helpers.ts", "relation": "caller"}, {"file": "src/app/api/generate/route.ts", "relation": "indirect"}]}, "gold_source": "by_construction"}
+{"id": "fx-rollback-mixed", "task_type": "rollback", "target_repo": "experiments/fixtures/fixture_repo", "query": "登录逻辑昨天改坏了，需要撤销，但保留同一次提交中的标题修改", "commit": "bbdc659", "gold": {"rollback_files": ["src/lib/auth.ts", "src/app/login/page.tsx"], "keep_files": ["src/app/layout.tsx"]}, "gold_source": "by_construction"}
+{"id": "fx-rollback-extract", "task_type": "rollback", "target_repo": "experiments/fixtures/fixture_repo", "query": "登录输入校验改坏了，撤销这次修改", "commit": "8edc826", "gold": {"rollback_files": ["src/lib/validate.ts", "src/app/api/auth/login/route.ts"], "keep_files": []}, "gold_source": "by_construction"}
+{"id": "mm-locate-title", "task_type": "locate", "target_repo": "mindmap", "query": "系统标题在哪里修改", "gold": null, "gold_source": "manual"}
+{"id": "mm-locate-export", "task_type": "locate", "target_repo": "mindmap", "query": "导出思维导图为图片的功能在哪", "gold": null, "gold_source": "manual"}
+{"id": "mm-impact-gen", "task_type": "impact", "target_repo": "mindmap", "query": "修改 generateWithRetry 会影响什么", "gold": null, "gold_source": "manual"}
+{"id": "mm-rollback-recent", "task_type": "rollback", "target_repo": "mindmap", "query": "上次导出功能的修改有问题，撤销它，保留其他改动", "gold": null, "gold_source": "manual"}

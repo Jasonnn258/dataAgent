@@ -20,8 +20,21 @@ STRUCT_BOOST_ROOT_LAYOUT_TITLE = 5.0
 STRUCT_SAME_SYMBOL = 1.5
 
 
+_idx_cache: dict[str, CodeIndex] = {}
+
+
 def build_index(repo: Path, rec: ToolRecorder) -> CodeIndex:
-    return CodeIndex(repo, rec).build()
+    """Build (or reuse in-process) the structural index for a repo.
+
+    Analysis is read-only, so caching by repo path is safe; it makes the
+    4-mode x N-task evaluation matrix build the index once per repo.
+    """
+    key = str(repo.resolve())
+    idx = _idx_cache.get(key)
+    if idx is None:
+        idx = CodeIndex(repo, rec).build()
+        _idx_cache[key] = idx
+    return idx
 
 
 def enrich_locate_candidates(repo: Path, cands: list[LocatedCandidate],

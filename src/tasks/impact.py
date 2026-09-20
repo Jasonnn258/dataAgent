@@ -46,6 +46,8 @@ class ImpactRunner(TaskRunnerBase):
 
         if self.git_enabled():
             self._git_layer(name, result)
+        if self.graph_enabled():
+            self._graph_layer(name, result)
 
         result.task = "impact"
         return TaskOutput(
@@ -81,6 +83,10 @@ class ImpactRunner(TaskRunnerBase):
             enrich_impact_with_git(self.repo, result, self.rec, tf, tl)
         except ImportError:
             self.rec.warn("git layer not implemented yet (Phase 3)")
+
+    def _graph_layer(self, name: str, result: ImpactResult) -> None:
+        from src.semgraph.enrich import enrich_impact_with_graph
+        enrich_impact_with_graph(self.repo, name, result, self.rec)
 
     # ---------------------------------------------------------------- structural
     def _structural_impact(self, name: str, qt) -> ImpactResult:

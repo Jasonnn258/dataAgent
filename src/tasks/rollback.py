@@ -68,6 +68,11 @@ class RollbackRunner(TaskRunnerBase):
             operations_hint=self._operations_hint(problem_units, keep_units, sha),
         )
         result.query_interpretation += f" | commit[{sha[:8]} {subj[:60]}]"
+
+        if self.graph_enabled():
+            from src.semgraph.enrich import enrich_rollback_with_graph
+            enrich_rollback_with_graph(self.repo, result, self.rec)
+
         return TaskOutput(
             task="rollback", mode=self.s.mode, query=query, repo=str(self.repo),
             commit=sha, result=result,
