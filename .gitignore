@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+outputs/
+index_cache/
+mindmap/
+experiments/fixtures/fixture_repo/
+experiments/fixtures/mindmap_git/.git
+nohup.out
+*.egg-info/

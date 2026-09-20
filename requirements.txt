@@ -1,0 +1,10 @@
+# core
+pydantic>=2.0
+# parsing
+tree-sitter>=0.25
+tree-sitter-typescript>=0.23
+tree-sitter-javascript>=0.23
+# optional: context graph (mode=semantica)
+# semantica==0.6.8
+# optional: LLM reasoning (OpenAI-compatible endpoint); framework runs without it
+# openai>=1.40
