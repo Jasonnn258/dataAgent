@@ -38,14 +38,18 @@ def test_git_whitelist_blocks_writes(api):
 
 def test_log_parses_all_commits(api):
     cs = api.log()
-    assert len(cs) == 4
-    assert cs[0].subject == "docs: add readme"
+    assert len(cs) == 5
+    assert cs[0].subject == "refactor: extract input format check into validate lib"
     mixed = next(c for c in cs if "reword system title" in c.subject)
     assert set(mixed.files) == {"src/app/layout.tsx", "src/app/login/page.tsx", "src/lib/auth.ts"}
 
 
+def mixed_sha(api) -> str:
+    return next(c.sha for c in api.log() if "reword system title" in c.subject)
+
+
 def test_diff_mixed_commit_hunks(api):
-    sha = api.resolve("HEAD~1")
+    sha = mixed_sha(api)
     d = api.diff(sha)
     by_file = {}
     for h in d.hunks:
@@ -60,7 +64,7 @@ def test_diff_mixed_commit_hunks(api):
 
 def test_blame_finds_regression_line(api):
     blame = api.blame("src/lib/auth.ts")
-    reg = api.resolve("HEAD~1")
+    reg = mixed_sha(api)
     lines_from_mixed = [ln for ln, sha in blame.items() if sha == reg]
     assert lines_from_mixed == [15]  # the `>= 8` validation line
 

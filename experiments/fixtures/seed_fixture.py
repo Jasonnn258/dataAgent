@@ -194,6 +194,28 @@ export async function POST(req: NextRequest) {
 }
 '''
 
+# c5 version: POST calls checkFormat from the new format lib (no auth-flavored
+# tokens anywhere in that file — only the *call graph* binds it to login)
+API_LOGIN_V2 = '''import { NextRequest, NextResponse } from "next/server";
+import { verifyPassword, validateAccount } from "@/lib/auth";
+import { checkFormat } from "@/lib/validate";
+
+export async function POST(req: NextRequest) {
+  const { account, password } = await req.json();
+  if (!validateAccount(account) || !checkFormat(account)) {
+    return NextResponse.json({ error: "invalid account" }, { status: 400 });
+  }
+  const ok = await verifyPassword(password, "stored-hash");
+  if (!ok) return NextResponse.json({ error: "wrong password" }, { status: 401 });
+  return NextResponse.json({ ok: true });
+}
+'''
+
+VALIDATE_LIB = '''export function checkFormat(value: string): boolean {
+  return value.length >= 6;
+}
+'''
+
 API_GENERATE = '''import { NextRequest, NextResponse } from "next/server";
 import { generateDesign } from "@/lib/ai-helpers";
 
@@ -268,6 +290,16 @@ def seed(force: bool = False) -> Path:
     w("README.md", "# fixture repo\n\nDeterministic fixture for rollback/change-unit experiments.\n")
     git("add", "-A", date="2026-09-18T09:04:00 +0800")
     git("commit", "-qm", "docs: add readme", date="2026-09-18T09:04:00 +0800")
+
+    # c5 — refactor: format validation extracted into validate.ts. No auth-ish
+    # token in the new file's name/content; only the call graph (route imports
+    # checkFormat) links this change to the login flow. Canonical case where
+    # structural modes must beat lexical on rollback attribution.
+    w("src/lib/validate.ts", VALIDATE_LIB)
+    w("src/app/api/auth/login/route.ts", API_LOGIN_V2)
+    git("add", "-A", date="2026-09-18T09:05:00 +0800")
+    git("commit", "-qm", "refactor: extract input format check into validate lib",
+        date="2026-09-18T09:05:00 +0800")
 
     print(f"fixture seeded at {FIXTURE}")
     for line in git("log", "--oneline", "--reverse", date="2026-09-18T09:04:00 +0800").splitlines():
