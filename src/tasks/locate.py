@@ -20,7 +20,8 @@ from src.errors import DataAgentError
 from src.schema import (Evidence, LocatedCandidate, LocateResult, TaskOutput)
 from src.search.keywords import QueryTerms, extract_terms
 from src.search.lexical import (LexicalSearcher, Match, MAX_GROUPS_PER_FILE,
-                                classify_hit, extension_weight, filename_bonus)
+                                W_FILENAME, classify_hit, extension_weight,
+                                filename_bonus)
 from src.tasks import register
 from src.tasks.base import ContextItem, TaskRunnerBase
 
@@ -122,6 +123,23 @@ class LocateRunner(TaskRunnerBase):
                     score=round(score, 3), reason="lexical: " + ", ".join(reasons[:6]),
                     evidence=evs[:6],
                 ))
+
+        # files whose *name* matches but contain no line hits still deserve a
+        # file-level candidate (e.g. auth.ts for "登录验证": logic lives in
+        # camelCase identifiers the term list never matches verbatim)
+        name_matched = self.searcher.iter_files()
+        for p in name_matched:
+            rel = p.relative_to(self.repo).as_posix()
+            if rel in by_file or extension_weight(rel) < 0.7:
+                continue
+            bonus = filename_bonus(rel, terms)
+            if bonus >= W_FILENAME:
+                out.append(LocatedCandidate(
+                    file=rel, line_start=None, line_end=None,
+                    score=round(bonus * extension_weight(rel), 3),
+                    reason=f"lexical: filename match ({Path(rel).stem})",
+                    evidence=[Evidence(kind="lexical_match", source=rel,
+                                       detail="filename matches query terms")]))
         return out
 
     # ------------------------------------------------- layers 2..4 (later phases)

@@ -44,6 +44,9 @@ class ImpactRunner(TaskRunnerBase):
         else:
             result = self._lexical_impact(name, qt)
 
+        if self.git_enabled():
+            self._git_layer(name, result)
+
         result.task = "impact"
         return TaskOutput(
             task="impact", mode=self.s.mode, query=query, repo=str(self.repo),
@@ -68,6 +71,16 @@ class ImpactRunner(TaskRunnerBase):
         raise DataAgentError(
             f"impact: cannot extract a symbol name from query {query!r} — "
             f"pass e.g. --query generateWithRetry")
+
+    # ---------------------------------------------------------------- git layer
+    def _git_layer(self, name: str, result: ImpactResult) -> None:
+        try:
+            from src.git_history.enrich import enrich_impact_with_git
+            tf = result.target.file if result.target else None
+            tl = (result.target.line_start, result.target.line_end) if result.target and result.target.line_start else None
+            enrich_impact_with_git(self.repo, result, self.rec, tf, tl)
+        except ImportError:
+            self.rec.warn("git layer not implemented yet (Phase 3)")
 
     # ---------------------------------------------------------------- structural
     def _structural_impact(self, name: str, qt) -> ImpactResult:
