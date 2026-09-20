@@ -128,7 +128,7 @@ class LocateRunner(TaskRunnerBase):
     def _structural_layer(self, cands: list[LocatedCandidate]) -> list[LocatedCandidate]:
         try:
             from src.structural.enrich import enrich_locate_candidates
-            return enrich_locate_candidates(self.repo, cands, self.rec)
+            return enrich_locate_candidates(self.repo, cands, self.rec, getattr(self, "qt", None))
         except ImportError:
             self.rec.warn("structural layer not implemented yet (Phase 2)")
             return cands
