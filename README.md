@@ -15,11 +15,15 @@
 ## 快速开始
 
 ```bash
+# 本机已建好 conda 环境 dataagent（python 3.11，依赖全装）
+conda activate dataagent
+
+# 从零复现（其他机器）：
 pip install -r requirements.txt
 # semantica 模式（可选）：
-#   pip install semantica==0.6.8            # 完整（拖 numpy/sklearn/umap 全家桶）
-#   pip install --no-deps semantica==0.6.8  # 最小（我们只用 semantica.kg + semantica.provenance，
-#                                            #  环境里已有 numpy/networkx 即可）
+#   pip install --no-deps semantica==0.6.8 numpy scikit-learn
+#   # 完整安装会拖 umap 全家桶（600MB+），我们只用 semantica.kg +
+#   # semantica.provenance，numpy/sklearn 是 kg/__init__ 的最小硬依赖
 
 # 构造实验用 fixture 仓库（含"标题+登录混合提交"，rollback 实验必需）
 python experiments/fixtures/seed_fixture.py

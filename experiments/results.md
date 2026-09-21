@@ -34,7 +34,7 @@
 
 | mode | mean latency ms | mean context chars | mean tool calls | n |
 |---|---|---|---|---|
-| lexical | 109 | 7870 | 4.2 | 8 |
-| semantica | 328 | 146 | 8.0 | 5 |
-| structural | 165 | 7700 | 4.0 | 8 |
-| structural_git | 123 | 146 | 6.4 | 5 |
+| lexical | 108 | 7870 | 4.2 | 8 |
+| semantica | 324 | 146 | 8.0 | 5 |
+| structural | 167 | 7700 | 4.0 | 8 |
+| structural_git | 82 | 146 | 6.4 | 5 |
