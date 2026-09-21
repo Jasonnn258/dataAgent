@@ -29,13 +29,16 @@ class RepositoryNavigator:
 
     def __init__(self, broker, llm=None):
         self.broker = broker
-        self.mapper = SemanticMapper(broker.graph, broker.rec)
-        self.mapper.seed_deterministic()
         self.llm = llm
+        self.mapper = None
+        if broker.layer_active("semantic"):
+            self.mapper = SemanticMapper(broker.graph, broker.rec)
+            self.mapper.seed_deterministic()
 
     def find_target(self, query: str, scope=None) -> NavigationResult:
         self.broker.rec.tool(f"agent:{self.ROLE}:navigate")
-        cands = self.mapper.map_query(query, llm=self.llm)
+        cands = self.mapper.map_query(query, llm=self.llm) \
+            if self.mapper is not None else []
         if not cands:
             # no feature matched — deterministic symbol/filename fallback
             node = self.broker.resolve_target(query)

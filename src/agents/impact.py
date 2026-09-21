@@ -41,7 +41,9 @@ class ImpactSliceAgent:
     def slice_impact(self, target_ids: list[str], task_id: str,
                      scope=None) -> ImpactSlice:
         self.broker.rec.tool(f"agent:{self.ROLE}:slice")
-        view = self.broker.create_task_view(task_id, target_ids)
+        view = None
+        if self.broker.layer_active("taskview"):
+            view = self.broker.create_task_view(task_id, target_ids)
         slice_ = ImpactSlice(target_ids=list(target_ids), view=view)
         ev_ids: list[str] = []
         callers: list[str] = []
@@ -63,7 +65,7 @@ class ImpactSliceAgent:
         slice_.caller_ids = sorted(set(callers))
         # audited growth: the caller/import closure enters the view only
         # now, with a trigger naming this agent
-        if slice_.caller_ids:
+        if slice_.caller_ids and view is not None:
             self.broker.expand_task_view(
                 task_id, slice_.caller_ids,
                 relations={EdgeType.CALLS, EdgeType.REFERENCES,

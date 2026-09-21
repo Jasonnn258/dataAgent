@@ -146,7 +146,11 @@ class Orchestrator:
             task_id=task_id, scope=scopes[self.planner.ROLE])
 
         # 5. verify every finding this task produced (deduped: a finding can
-        #    be registered from two find_units passes)
+        #    be registered from two find_units passes). Verification itself
+        #    is a capability: G4 (evidence layer) only.
+        if not self.broker.layer_active("evidence"):
+            report.verdicts = []
+            return report
         task_findings = list(dict.fromkeys(
             fid for s in scopes.values() for fid in s.finding_ids))
         for fid in task_findings:

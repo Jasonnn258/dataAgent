@@ -87,17 +87,20 @@ class RollbackPlanner:
         plan.shared_symbols = sorted(rb_syms & keep_syms)
         plan.couplings = self.broker.import_couplings(plan.rollback_files,
                                                       plan.keep_files)
-        # policy gate over the plan's own facts
-        gate_ctx = {
-            "rollback_symbols": plan.rollback_symbols,
-            "keep_symbols": plan.keep_symbols,
-            "changed_files": plan.rollback_files + plan.keep_files,
-            "affected_routes": plan.affected_routes,
-            "unsupported_findings": len(self.broker.unsupported_findings()),
-        }
-        plan.policy_result = self.broker.run_policy_gate(gate_ctx,
-                                                         task_id=task_id)
-        action = plan.policy_result.action.value
+        # policy gate over the plan's own facts (G4: decision layer active)
+        if self.broker.layer_active("decision"):
+            gate_ctx = {
+                "rollback_symbols": plan.rollback_symbols,
+                "keep_symbols": plan.keep_symbols,
+                "changed_files": plan.rollback_files + plan.keep_files,
+                "affected_routes": plan.affected_routes,
+                "unsupported_findings": len(self.broker.unsupported_findings()),
+            }
+            plan.policy_result = self.broker.run_policy_gate(gate_ctx,
+                                                             task_id=task_id)
+            action = plan.policy_result.action.value
+        else:
+            action = "UNGATED"
         if action == "BLOCK":
             plan.recommendation = (
                 "STOP: policy gate blocked this plan "
@@ -113,11 +116,17 @@ class RollbackPlanner:
                 "HUMAN_REVIEW: " +
                 (plan.policy_result.detail[:160] if plan.policy_result else "") +
                 " — plan is ready but needs sign-off")
+        elif action == "UNGATED":
+            plan.recommendation = (
+                "UNGATED (no policy layer at this ablation level): "
+                "structural split only — no policy review was performed")
         else:
             plan.recommendation = (
                 "PASS: rollback/keep sets are decoupled — partial rollback "
                 "of the listed units is safe to prepare (execution stays manual)")
         # decisions: what we propose and why (audit summary, not CoT)
+        if not self.broker.layer_active("decision"):
+            return plan          # no decision memory at this ablation level
         for unit, outcome in [(u, "rollback") for u in plan.rollback_units] + \
                             [(u, "keep") for u in plan.keep_units]:
             d = self.broker.record_decision(Decision.make(

@@ -42,6 +42,8 @@ class ChangeIntelligenceAgent:
         restricts the search (the orchestrator pins the commit via the
         keep hint when the user anchors it)."""
         self.broker.rec.tool(f"agent:{self.ROLE}:find_units")
+        if not self.broker.layer_active("change"):
+            return []          # no change layer: nothing to match (G<2)
         tl = [t.lower() for t in terms if t]
         matches: list[UnitMatch] = []
         for cu in self.broker.graph.nodes_of_type(NodeType.CHANGE_UNIT):

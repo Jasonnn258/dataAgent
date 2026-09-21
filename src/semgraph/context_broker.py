@@ -46,16 +46,29 @@ class ChangeContext:
 
 
 class ContextBroker:
+    # "taskview" is a pseudo-layer: it gates bounded task views, not graph
+    # content (G3 in the Phase 10 ablation)
+    ALL_LAYERS = {"code", "semantic", "change", "evidence", "decision",
+                  "taskview"}
+
     def __init__(self, repo: Path, rec: ToolRecorder | None = None,
                  layers: set[str] | None = None):
-        """layers: which graph layers are active for this run (G0..G4
-        ablation). None = all currently built layers."""
+        """layers: which layers are active for this run (G0..G4 ablation).
+        None = everything currently built. Inactive graph layers are pruned
+        from the v2 projection; inactive capabilities raise loudly when an
+        agent tries to use them."""
         from src.semgraph.enrich import get_context_graph
         self.repo = repo
         self.rec = rec or ToolRecorder()
         self._v1 = get_context_graph(repo, self.rec)
         self.graph = GraphV2.from_v1(self._v1)
-        self.layers = layers
+        self.layers = (set(layers) | {"code"}) if layers is not None \
+            else set(self.ALL_LAYERS)
+        unknown = self.layers - self.ALL_LAYERS
+        if unknown:
+            raise DataAgentError(f"unknown layers {sorted(unknown)}")
+        if layers is not None:
+            self.graph = self.graph.prune_to_layers(self.layers)
         # object stores (evidence/decision registries are process-local v1)
         self._evidence: dict[str, Evidence] = {}
         self._findings: dict[str, Finding] = {}
@@ -63,6 +76,9 @@ class ContextBroker:
         self._decisions: dict[str, Decision] = {}
         self._views: dict[str, TaskGraphView] = {}
         self._counter = 0
+
+    def layer_active(self, name: str) -> bool:
+        return name in self.layers
 
     # ------------------------------------------------------------ target
     def resolve_target(self, query: str) -> Node:
@@ -164,6 +180,9 @@ class ContextBroker:
     # ------------------------------------------------------------ views
     def create_task_view(self, task_id: str, target_ids: list[str],
                          relations: set[EdgeType] | None = None) -> TaskGraphView:
+        if not self.layer_active("taskview"):
+            raise DataAgentError(
+                "task views are disabled (taskview layer inactive, G<3)")
         view = TaskGraphView.select(self.graph, task_id, target_ids,
                                     rel_types=relations, trigger="init")
         self._views[task_id] = view

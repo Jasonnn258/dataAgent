@@ -305,6 +305,20 @@ class GraphV2:
         return {"nodes": len(self._nodes), "edges": len(self._edges),
                 "by_layer": self.layer_stats()}
 
+    def prune_to_layers(self, active: set[str]) -> "GraphV2":
+        """Return a copy restricted to the active layers (Phase 10 G0-G4).
+        A node survives if its layer is active; an edge survives if its own
+        layer is active AND both endpoints survived."""
+        out = GraphV2()
+        for n in self._nodes.values():
+            if n.layer() in active:
+                out.add_node(Node(n.id, n.type, props=dict(n.props)))
+        for e in self._edges.values():
+            if (e.layer() in active and e.src in out._nodes
+                    and e.dst in out._nodes):
+                out.add_edge(Edge(e.src, e.dst, e.type, props=dict(e.props)))
+        return out
+
     def all_nodes(self) -> list[Node]:
         return list(self._nodes.values())
 

@@ -114,6 +114,90 @@ validate.ts）→ structural+ 1.0；semantica ≈ structural_git（同决策 + �
 - 任务：locate / impact / rollback（rollback 仅分析建议，不执行任何 git 写操作）
 - Phase 0 骨架 ✅ → 1 lexical ✅ → 2 structural ✅ → 3 git ✅ → 4 rollback ✅
   → 5 semantica ✅ → 6 评测消融 ✅
+- Phase 9 ✅（Graph Schema v2 / Context Broker / TaskGraphView / 语义特征层 /
+  变更时间图 / Evidence-Finding-Conflict / Decision Memory / Policy Gate /
+  五 Agent + Orchestrator / 双 Verifier）→ Phase 10 G0-G4 图消融 ✅
+
+## Agent Layer v2（Phase 9，Semantica 设计哲学的重排）
+
+核心原则：**LLM 负责模糊理解，确定性工具负责事实**。Agent 不共享中间思考，
+只共享结构化事实（Evidence / Finding / Decision / Policy，全部一等数据对象）。
+
+```
+query ──▶ ContextBroker（src/semgraph/context_broker.py，唯一边界）
+             │  Agents never touch GraphV2/semantica.kg/CodeIndex/GitAPI
+             ▼
+          Orchestrator（src/agents/orchestrator.py，只协调不思考）
+             ├── RepositoryNavigator      模糊 NL → Feature（LLM 只能选已有名字）
+             ├── ChangeIntelligenceAgent  terms → ChangeUnit（分数+时间排序）
+             ├── ImpactSliceAgent         有界 TaskGraphView + 波及面
+             ├── RollbackPlanner          单元级回退/保留计划 + Policy Gate
+             └── Verifiers                Deterministic + Semantic（三档裁决，
+                                          禁伪精确 confidence；语义证据永不能
+                                          单独把 finding 升为 verified）
+```
+
+- **Graph Schema v2**（`src/semgraph/schema_v2.py`）：typed Node/Edge + 五层
+  （code/semantic/change/evidence/decision）+ 时间字段（valid_from_commit/
+  valid_to_commit/observed_at）；v1 ContextGraph 仍是查询引擎，`from_v1`/
+  `sync_back_to_v1` 双向兼容，Phase 0-6 parser 一行未改
+- **Change + Temporal Graph**（`src/semgraph/change_graph.py`）：复用
+  git_history/change_units，Commit CONTAINS_CHANGE ChangeUnit、ChangeUnit
+  MODIFIES File/ChangedSymbol/Feature，**绝不默认 commit == change unit**
+- **Conflict Model**：同主题不同断言 → CONTRADICTS 边 + 注册表，双方都保留；
+  冲突未解决不得 verified（严格守卫：链式冲突也算未解决）
+- **Policy Gate**（`src/semgraph/policy.py`）：结构化规则带版本，
+  BLOCK > HUMAN_REVIEW > PASS；rollback/keep 共享符号、公共 API、DB 迁移 →
+  HUMAN_REVIEW；无证据 finding / 无效图路径 / 未解决测试失败 → BLOCK
+- **Decision Memory**：只存审计向 reason_summary（500 字截断 + 告警），
+  禁存隐藏 CoT；`get_precedents` 按 category/target/查询词找先例
+
+### 验收演示（六步，全部确定性，无 LLM 也能跑）
+
+「昨天登录逻辑改坏了，帮我找出问题修改，准备回退，但保留同 commit 中已经
+改好的系统标题」：
+
+```bash
+/vla_test/yjx/miniconda3/envs/dataagent/bin/python - <<'EOF'
+import sys; sys.path.insert(0, '.')
+from pathlib import Path
+from src.schema import ToolRecorder
+from src.semgraph.context_broker import ContextBroker
+from src.semgraph.change_graph import build_change_graph
+from src.agents import Orchestrator
+b = ContextBroker(Path("experiments/fixtures/fixture_repo"), ToolRecorder())
+build_change_graph(b)
+print(Orchestrator(b).run(
+    "登录逻辑改坏了，帮我找出问题修改，准备回退",
+    keep_hint="保留同 commit 中已经改好的系统标题").dump())
+EOF
+```
+
+Navigator 识别 Feature AuthLogin/SystemBranding → ChangeIntelligence 定位
+混合提交 bbdc659f 的 U2[auth]（问题）/U1[title]（保留）→ ImpactSlice 验证
+U2 波及 `/api/auth/login`（有界 23 节点视图）→ RollbackPlanner 出单元级计划
+（共享符号/导入耦合均无）→ Verifiers 裁决（单元匹配全部 SUPPORTED+verified，
+导航类 finding 诚实标 UNSUPPORTED/PARTIALLY_SUPPORTED）→ Policy Gate 因触
+公共 API 路由给 HUMAN_REVIEW。**全程零 git 写操作，回退绝不执行。**
+
+## Phase 10：G0-G4 图消融
+
+`experiments/g_ablation.py`，同一验收场景，逐层开图：
+
+```
+level | nav  | problem | keep | policy       | verdicts | verified | view_nodes
+G0    | fail | 0       | 0    | -            | 0        | 0        | 0
+G1    | ok   | 0       | 0    | -            | 0        | 0        | 0
+G2    | ok   | 1       | 1    | ungated      | 0        | 0        | 0
+G3    | ok   | 1       | 1    | ungated      | 0        | 0        | 23
+G4    | ok   | 1       | 1    | HUMAN_REVIEW | 9        | 5        | 23
+```
+
+- Q1 语义层是模糊自然语言入口的必要条件（G0 连目标都解析不出）
+- Q2 变更层是单元级回退的必要条件（G1 找到 Feature 但没有单元）
+- Q3 TaskView 把上下文钉在有界切片上（23/165 节点，扩展全程留痕）
+- Q4 Evidence/Decision/Policy 层让结论可验证可审计（9 裁决 5 verified +
+  门控 HUMAN_REVIEW；G3 及以下无裁决无门控）
 
 ## 已知限制
 
@@ -130,8 +214,9 @@ validate.ts）→ structural+ 1.0；semantica ≈ structural_git（同决策 + �
 
 - 人工补充 `experiments/tasks.jsonl` 的 gold（mindmap 真实任务）
 - Change Unit 拆分对"同文件多域混合 hunk"的拆分粒度评估
-- Multi-Agent（Target Mode 验证成立后再做）
-- LLM rerank 接入后的四模式对比（LLM 是否放大结构层优势）
+- Cluster Mode（复杂任务的子任务分解，Target Mode 已验证）
+- LLM rerank / semantic mapping 接入后的 G4 对比（LLM 是否放大结构层优势）
+- 冲突主题模型仍偏粗（共享标识符才算冲突）——积累真实误报/漏报再调
 
 ## 实验素材
 
