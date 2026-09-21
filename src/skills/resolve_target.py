@@ -19,7 +19,7 @@ class ResolveTargetSkill(BaseSkill):
         description="fuzzy NL query -> feature/symbol target + vocabulary",
         required_inputs=["query"],
         produced_outputs=["feature_id", "feature_name", "related_symbols",
-                          "terms", "finding_id"],
+                          "terms", "finding_id", "candidates"],
         allowed_capabilities=["semantic.map_candidates",
                               "repository.resolve_target",
                               "evidence.add", "evidence.finding.add"],
@@ -33,6 +33,8 @@ class ResolveTargetSkill(BaseSkill):
     def _execute(self, context: dict, broker) -> SkillResult:
         query = context["query"]
         llm = context.get("llm")
+        # actor = 负责本次调用的 Agent 名（归属沿用调用方，默认 skill 自身）
+        actor = context.get("actor") or "ResolveTargetSkill"
         cands = broker.map_semantic_candidates(query, llm=llm)
         out = SkillResult(skill=self.spec.name, status=SKILL_SUCCESS)
         if not cands:
@@ -43,12 +45,12 @@ class ResolveTargetSkill(BaseSkill):
                                payload=f"fallback resolution to {node.id}")
             broker.add_evidence(ev)
             f = broker.add_finding(Finding.make(
-                f"query targets {node.id}", "ResolveTargetSkill", [ev.id]))
+                f"query targets {node.id}", actor, [ev.id]))
             out.data = {"feature_id": node.id,
                         "feature_name": node.props.get("name", ""),
                         "related_symbols": [node.id],
                         "terms": [query], "finding_id": f.id,
-                        "candidates": 0}
+                        "candidates": 0, "candidate_details": []}
             out.evidence_ids = [ev.id]
             return out
         top = cands[0]
@@ -56,13 +58,14 @@ class ResolveTargetSkill(BaseSkill):
             broker.add_evidence(ev)
         f = broker.add_finding(Finding.make(
             f"query targets feature {top.name} ({top.mapping_method})",
-            "ResolveTargetSkill", [ev.id for ev in top.evidence]))
+            actor, [ev.id for ev in top.evidence]))
         out.data = {"feature_id": top.feature_id,
                     "feature_name": top.name,
                     "related_symbols": top.related_symbols,
                     "terms": broker.build_query_terms(query, top.name),
                     "finding_id": f.id,
-                    "candidates": len(cands)}
+                    "candidates": len(cands),
+                    "candidate_details": list(cands)}
         out.evidence_ids = [ev.id for ev in top.evidence]
         return out
 

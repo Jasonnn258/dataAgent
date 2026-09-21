@@ -88,7 +88,8 @@ class Orchestrator:
         self._n_tasks += 1
         task_id = f"task-{self._n_tasks}"
         scopes: dict[str, ScopedContext] = {
-            a.ROLE: ScopedContext(role=a.ROLE, task_id=task_id, reads=a.READS)
+            a.ROLE: ScopedContext(role=a.ROLE, task_id=task_id,
+                                  reads=a.READS, skills=a.SKILLS)
             for a in (self.navigator, self.change_intel, self.impact,
                       self.planner, self.det_verifier, self.sem_verifier)}
         report = FinalReport(query=query, keep_hint=keep_hint, task_id=task_id,
@@ -98,10 +99,10 @@ class Orchestrator:
         nav = self.navigator.find_target(query, scope=scopes[self.navigator.ROLE])
         report.navigation = nav
 
-        # 2. 变更情报：匹配词表的单元。同时命中两套词表的单元（如 UI 文案
-        #    里带"系统"二字的 auth 单元）归给打分更高的那套 —— 平局归问题
-        #    方（嫌疑犯 stays 嫌疑犯）。随后 keep hint 锚定 commit：
-        #    "保留同 commit 里的 Y"把问题搜索钉在用户点名的 commit 上。
+        # 2. 变更情报：匹配词表的单元；仲裁委托 planner（逻辑真源在
+        #    SafeRollbackSkill）：同时命中两套词表的单元归给打分更高的
+        #    那套 —— 平局归问题方（嫌疑犯 stays 嫌疑犯）；keep hint 锚定
+        #    commit，把问题搜索钉在用户点名的 commit 上。
         keep_nav = (self.navigator.find_target(
             keep_hint, scope=scopes[self.navigator.ROLE]) if keep_hint else None)
         prob_all = self.change_intel.find_units(
@@ -109,15 +110,7 @@ class Orchestrator:
         keep_all = (self.change_intel.find_units(
             keep_nav.terms, scope=scopes[self.change_intel.ROLE])
             if keep_nav else [])
-        score_p = {m.unit_id: m for m in prob_all}
-        score_k = {m.unit_id: m for m in keep_all}
-        keep_units = [m for uid, m in score_k.items()
-                      if uid not in score_p or score_k[uid].score > score_p[uid].score]
-        keep_ids = {m.unit_id for m in keep_units}
-        pin_commits = sorted({m.commit for m in keep_units}) or None
-        problem_units = [m for m in prob_all
-                         if m.unit_id not in keep_ids
-                         and (pin_commits is None or m.commit in pin_commits)]
+        problem_units, keep_units = self.planner.arbitrate(prob_all, keep_all)
         report.problem_units = problem_units
         report.keep_units = keep_units
 

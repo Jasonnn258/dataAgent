@@ -36,6 +36,12 @@ class EvidenceVerificationSkill(BaseSkill):
     )
 
     def _execute(self, context: dict, broker) -> SkillResult:
+        # mode：all = 一次出确定性+语义双裁决（skill 独立跑）；
+        # deterministic / semantic = 单裁决模式，供旧 Verifier agent 委托
+        # （归属沿用 agent 名，报告里的 verifier 字符串保持不变）
+        mode = context.get("mode", "all")
+        actor = context.get("actor") or "EvidenceVerificationSkill"
+        sem_actor = actor if mode == "semantic" else f"{actor}:semantic"
         out = SkillResult(skill=self.spec.name)
         verdicts: list[Verdict] = []
         for fid in list(context["finding_ids"]):
@@ -43,10 +49,12 @@ class EvidenceVerificationSkill(BaseSkill):
             if f is None:
                 out.warn(f"unknown finding {fid} — skipped")
                 continue
-            verdicts.append(self._deterministic(broker, f))
-            sem = self._semantic(broker, f)
-            if sem is not None:
-                verdicts.append(sem)
+            if mode in ("all", "deterministic"):
+                verdicts.append(self._deterministic(broker, f, actor))
+            if mode in ("all", "semantic"):
+                sem = self._semantic(broker, f, sem_actor)
+                if sem is not None:
+                    verdicts.append(sem)
         out.status = SKILL_SUCCESS if verdicts else SKILL_PARTIAL
         if not verdicts:
             out.warn("no verifiable findings given")
@@ -54,7 +62,7 @@ class EvidenceVerificationSkill(BaseSkill):
         return out
 
     # ---------------------------------------------------------- 确定性
-    def _deterministic(self, broker, finding) -> Verdict:
+    def _deterministic(self, broker, finding, actor: str) -> Verdict:
         checks: list[str] = []
         evidence = broker.get_evidence(finding.evidence_ids)
         missing = [e for e in finding.evidence_ids
@@ -79,18 +87,18 @@ class EvidenceVerificationSkill(BaseSkill):
         if status == VerdictStatus.SUPPORTED:
             try:
                 broker.set_finding_status(finding.id, "verified",
-                                          verifier="EvidenceVerificationSkill")
+                                          verifier=actor)
                 checks.append("finding promoted to verified")
             except Exception as e:  # DataAgentError：守卫拒绝
                 checks.append(f"verified blocked: {e}")
         elif status == VerdictStatus.UNSUPPORTED:
             broker.set_finding_status(finding.id, "unsupported",
-                                      verifier="EvidenceVerificationSkill")
+                                      verifier=actor)
         return Verdict(finding_id=finding.id, status=status,
-                       verifier="EvidenceVerificationSkill", checks=checks)
+                       verifier=actor, checks=checks)
 
     # ---------------------------------------------------------- 语义
-    def _semantic(self, broker, finding) -> Verdict | None:
+    def _semantic(self, broker, finding, sem_actor: str) -> Verdict | None:
         """None = 不归语义裁决（没有语义证据）。"""
         evidence = broker.get_evidence(finding.evidence_ids)
         sem = [e for e in evidence if e.type in SEMANTIC_TYPES]
@@ -106,8 +114,7 @@ class EvidenceVerificationSkill(BaseSkill):
             status = VerdictStatus.PARTIALLY_SUPPORTED
             checks.append("semantic-only: usable as a lead, not as proof")
         return Verdict(finding_id=finding.id, status=status,
-                       verifier="EvidenceVerificationSkill:semantic",
-                       checks=checks)
+                       verifier=sem_actor, checks=checks)
 
 
 register(EvidenceVerificationSkill())

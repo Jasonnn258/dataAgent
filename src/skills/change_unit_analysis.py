@@ -35,6 +35,7 @@ class ChangeUnitAnalysisSkill(BaseSkill):
     )
 
     def _execute(self, context: dict, broker) -> SkillResult:
+        actor = context.get("actor") or "ChangeUnitAnalysisSkill"
         out = SkillResult(skill=self.spec.name)
         if not broker.layer_active("change"):
             out.status = SKILL_PARTIAL
@@ -77,8 +78,7 @@ class ChangeUnitAnalysisSkill(BaseSkill):
             broker.add_evidence(ev)
             f = broker.add_finding(Finding.make(
                 f"unit {p.get('unit_id')} [{label}] in {p.get('commit', '')[:8]} "
-                f"matches the change description", "ChangeUnitAnalysisSkill",
-                [ev.id]))
+                f"matches the change description", actor, [ev.id]))
             matches.append({
                 "unit_id": cu.id, "commit": p.get("commit", ""),
                 "label": label, "date": self._commit_date(broker, p.get("commit", "")),

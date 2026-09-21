@@ -30,6 +30,7 @@ class ImpactAnalysisSkill(BaseSkill):
     )
 
     def _execute(self, context: dict, broker) -> SkillResult:
+        actor = context.get("actor") or "ImpactAnalysisSkill"
         target_ids = list(context["target_ids"])
         task_id = context["task_id"]
         slice_: dict = {"target_ids": target_ids, "route_ids": [],
@@ -65,12 +66,12 @@ class ImpactAnalysisSkill(BaseSkill):
                 task_id, slice_["caller_ids"],
                 relations={EdgeType.CALLS, EdgeType.REFERENCES,
                            EdgeType.IMPORTS},
-                depth=1, trigger="ImpactAnalysisSkill: caller closure")
+                depth=1, trigger=f"{actor}: caller closure")
         if slice_["routes"]:
             f = broker.add_finding(Finding.make(
                 f"modifying {slice_['symbols'] or target_ids} affects "
                 f"routes {slice_['routes']} via {len(slice_['caller_ids'])} caller(s)",
-                "ImpactAnalysisSkill", ev_ids))
+                actor, ev_ids))
             slice_["finding_id"] = f.id
         slice_["evidence_ids"] = ev_ids
         out = SkillResult(skill=self.spec.name, status=SKILL_SUCCESS,

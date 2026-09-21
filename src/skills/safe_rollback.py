@@ -21,6 +21,29 @@ def _short(qualified: str) -> str:
     return qualified.rsplit("::", 1)[-1]
 
 
+def arbitrate(problem_matches: list[dict], keep_matches: list[dict]):
+    """keep/problem 仲裁（纯数据运算，无 broker 访问）。
+
+    同时命中两套词表的单元归打分更高者，平局归问题侧（嫌疑犯 stays
+    嫌疑犯）；keep 命中把问题搜索钉在用户点名的 commit 上。skill 与
+    orchestrator（经 RollbackPlanner.arbitrate）共用这一份逻辑。
+    """
+    score_p = {m["unit_id"]: m for m in problem_matches}
+    score_k = {m["unit_id"]: m for m in keep_matches}
+    keep_units = [m for uid, m in score_k.items()
+                  if uid not in score_p
+                  or score_k[uid]["score"] > score_p[uid]["score"]]
+    keep_ids = {m["unit_id"] for m in keep_units}
+    # 只有真实的 commit 才构成钉住；空 commit（如按 unit id 直传的计划
+    # 路径）不限制问题侧
+    pin_commits = sorted({m["commit"] for m in keep_units
+                          if m.get("commit")}) or None
+    problem_units = [m for m in problem_matches
+                     if m["unit_id"] not in keep_ids
+                     and (pin_commits is None or m["commit"] in pin_commits)]
+    return problem_units, keep_units
+
+
 class SafeRollbackSkill(BaseSkill):
     spec = SkillSpec(
         name="safe_rollback",
@@ -30,7 +53,7 @@ class SafeRollbackSkill(BaseSkill):
                           "keep_matches_kept", "rollback_files", "keep_files",
                           "rollback_symbols", "keep_symbols", "shared_symbols",
                           "couplings", "policy_action", "recommendation",
-                          "decision_ids"],
+                          "decision_ids", "policy_result"],
         allowed_capabilities=["repository.node", "change.get_couplings",
                               "policy.gate", "decision.record",
                               "evidence.query"],
@@ -45,19 +68,11 @@ class SafeRollbackSkill(BaseSkill):
         keep_all = list(context["keep_matches"])
         affected_routes = list(context.get("affected_routes") or [])
         task_id = context.get("task_id", "")
+        actor = context.get("actor") or "SafeRollbackSkill"
         out = SkillResult(skill=self.spec.name, status=SKILL_SUCCESS)
 
-        # ---- 1. 仲裁（自 orchestrator 原样移植）----
-        score_p = {m["unit_id"]: m for m in prob_all}
-        score_k = {m["unit_id"]: m for m in keep_all}
-        keep_units = [m for uid, m in score_k.items()
-                      if uid not in score_p
-                      or score_k[uid]["score"] > score_p[uid]["score"]]
-        keep_ids = {m["unit_id"] for m in keep_units}
-        pin_commits = sorted({m["commit"] for m in keep_units}) or None
-        problem_units = [m for m in prob_all
-                         if m["unit_id"] not in keep_ids
-                         and (pin_commits is None or m["commit"] in pin_commits)]
+        # ---- 1. 仲裁（同模块 arbitrate()）----
+        problem_units, keep_units = arbitrate(prob_all, keep_all)
 
         # ---- 2. 计划装配（自 planner.plan 原样移植）----
         rollback_unit_ids = [m["unit_id"] for m in problem_units]
@@ -143,7 +158,7 @@ class SafeRollbackSkill(BaseSkill):
                              f"from {unit['commit'][:8]}",
                     task_id=task_id, target=",".join(unit["files"][:3]),
                     risk={"BLOCK": "high"}.get(action, "medium"),
-                    decision_maker="SafeRollbackSkill", evidence_ids=ev_ids,
+                    decision_maker=actor, evidence_ids=ev_ids,
                     reason_summary=f"policy={action}; "
                                    f"shared={shared_symbols or 'none'}; "
                                    f"couplings={len(couplings)}"))
@@ -159,6 +174,8 @@ class SafeRollbackSkill(BaseSkill):
             "policy_action": action, "policy_detail": policy_detail,
             "rule_name": rule_name, "recommendation": recommendation,
             "decision_ids": decision_ids, "evidence_ids": ev_ids,
+            "policy_result": policy_result if broker.layer_active("decision")
+            else None,
         }
         out.evidence_ids = ev_ids
         return out

@@ -1,16 +1,23 @@
-"""RollbackPlanner（Phase 9J）：单元级回退/保留计划，绝不执行。
+"""RollbackPlanner（Phase 9J / 11B）：单元级回退/保留计划，绝不执行。
 
 产出 RollbackPlan（数据），带着单元的 evidence 记录 rollback/keep
 decision，并对计划自身的事实跑 policy gate。它从不跑 git：没有
 checkout、没有 revert、没有 reset —— 计划即交付物，执行属于
 HUMAN_REVIEW/PASS 之后的人类。
+
+11B 起装配/gate/decision 全部委托给 SafeRollbackSkill（归属沿用
+RollbackPlanner，decision_maker 不变）；仲裁也从这里暴露给
+orchestrator（逻辑真源在 skill 模块的 arbitrate()）。
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from src.semgraph.objects import Decision
-from src.semgraph.schema_v2 import NodeType
+from src.agents.change_intel import UnitMatch, to_unit_match
+from src.errors import DataAgentError
+from src.semgraph.objects import Decision  # noqa: F401（旧引用兼容）
+from src.skills.runtime import SkillRuntime
+from src.skills.safe_rollback import arbitrate as _arbitrate
 
 
 @dataclass
@@ -43,101 +50,56 @@ class RollbackPlan:
         return "\n".join(lines)
 
 
-def _short(qualified: str) -> str:
-    return qualified.rsplit("::", 1)[-1]
-
-
 class RollbackPlanner:
     ROLE = "RollbackPlanner"
     READS = ["find_change_units", "import_couplings", "run_policy_gate",
              "record_decision", "node"]
+    SKILLS = ["safe_rollback"]
 
     def __init__(self, broker):
         self.broker = broker
+        self._runtime = SkillRuntime(broker)
+
+    def arbitrate(self, problem_matches: list[UnitMatch],
+                  keep_matches: list[UnitMatch]):
+        """keep/problem 仲裁（委托 skill 模块的纯函数）。返回
+        (problem_units, keep_units_kept)，仍是 UnitMatch 形态。"""
+        from dataclasses import asdict
+        prob, keep = _arbitrate([asdict(m) for m in problem_matches],
+                                [asdict(m) for m in keep_matches])
+        return [to_unit_match(m) for m in prob], [to_unit_match(m) for m in keep]
 
     def plan(self, rollback_unit_ids: list[str], keep_unit_ids: list[str],
              affected_routes: list[str] | None = None, task_id: str = "",
              scope=None) -> RollbackPlan:
         self.broker.rec.tool(f"agent:{self.ROLE}:plan")
-        plan = RollbackPlan(task_id=task_id,
-                            affected_routes=list(affected_routes or []))
-        ev_ids: list[str] = []
-        for uid, bucket in [(u, plan.rollback_units) for u in rollback_unit_ids] + \
-                           [(u, plan.keep_units) for u in keep_unit_ids]:
-            node = self.broker.node(uid)
-            if node is None or node.type != NodeType.CHANGE_UNIT:
-                continue
-            p = node.props
-            bucket.append({"id": p.get("unit_id", uid), "label":
-                           p.get("semantic_label", ""), "commit": p.get("commit", ""),
-                           "files": list(p.get("files", []))})
-            if p.get("evidence_id"):
-                ev_ids.append(p["evidence_id"])
-        plan.rollback_files = sorted({f for u in plan.rollback_units
-                                      for f in u["files"]})
-        plan.keep_files = sorted({f for u in plan.keep_units for f in u["files"]})
-        rb_syms, keep_syms = set(), set()
-        for uid, sink in [(u, rb_syms) for u in rollback_unit_ids] + \
-                         [(u, keep_syms) for u in keep_unit_ids]:
-            node = self.broker.node(uid)
-            if node is not None:
-                sink |= {_short(s) for s in node.props.get("symbols", [])}
-        plan.rollback_symbols = sorted(rb_syms)
-        plan.keep_symbols = sorted(keep_syms)
-        plan.shared_symbols = sorted(rb_syms & keep_syms)
-        plan.couplings = self.broker.import_couplings(plan.rollback_files,
-                                                      plan.keep_files)
-        # 对计划自身的事实跑 policy gate（G4：decision 层激活）
-        if self.broker.layer_active("decision"):
-            gate_ctx = {
-                "rollback_symbols": plan.rollback_symbols,
-                "keep_symbols": plan.keep_symbols,
-                "changed_files": plan.rollback_files + plan.keep_files,
-                "affected_routes": plan.affected_routes,
-                "unsupported_findings": len(self.broker.unsupported_findings()),
-            }
-            plan.policy_result = self.broker.run_policy_gate(gate_ctx,
-                                                             task_id=task_id)
-            action = plan.policy_result.action.value
-        else:
-            action = "UNGATED"
-        if action == "BLOCK":
-            plan.recommendation = (
-                "STOP: policy gate blocked this plan "
-                f"({plan.policy_result.rule.name if plan.policy_result.rule else '?'}) "
-                "— fix the blocking condition before any rollback")
-        elif plan.shared_symbols or plan.couplings:
-            plan.recommendation = (
-                "HUMAN_REVIEW: rollback and keep sets are coupled "
-                f"(shared={plan.shared_symbols}, imports={len(plan.couplings)}) "
-                "— partial rollback needs a human decision")
-        elif action == "HUMAN_REVIEW":
-            plan.recommendation = (
-                "HUMAN_REVIEW: " +
-                (plan.policy_result.detail[:160] if plan.policy_result else "") +
-                " — plan is ready but needs sign-off")
-        elif action == "UNGATED":
-            plan.recommendation = (
-                "UNGATED (no policy layer at this ablation level): "
-                "structural split only — no policy review was performed")
-        else:
-            plan.recommendation = (
-                "PASS: rollback/keep sets are decoupled — partial rollback "
-                "of the listed units is safe to prepare (execution stays manual)")
-        # decision：我们提议什么、为什么（审计摘要，不是 CoT）
-        if not self.broker.layer_active("decision"):
-            return plan          # 该消融级没有决策记忆
-        for unit, outcome in [(u, "rollback") for u in plan.rollback_units] + \
-                            [(u, "keep") for u in plan.keep_units]:
-            d = self.broker.record_decision(Decision.make(
-                outcome, f"{outcome} unit {unit['id']} [{unit['label']}] "
-                         f"from {unit['commit'][:8]}",
-                task_id=task_id, target=",".join(unit["files"][:3]),
-                risk={"BLOCK": "high"}.get(action, "medium"),
-                decision_maker=self.ROLE, evidence_ids=ev_ids,
-                reason_summary=f"policy={action}; shared={plan.shared_symbols or 'none'}; "
-                               f"couplings={len(plan.couplings)}"))
-            plan.decision_ids.append(d.id)
-            if scope:
-                scope.produced(decision=d.id)
+        # 旧接口收 unit id 列表：包一层最小 match（空 commit 不构成钉住，
+        # 见 skill.arbitrate）—— 仲裁在此退化为直通
+        wrap = lambda ids: [{"unit_id": u, "commit": "", "score": 0.0}
+                            for u in ids]
+        r = self._runtime.run("safe_rollback", {
+            "problem_matches": wrap(rollback_unit_ids),
+            "keep_matches": wrap(keep_unit_ids),
+            "affected_routes": list(affected_routes or []),
+            "task_id": task_id, "actor": self.ROLE})
+        if r.status == "failed":
+            raise DataAgentError(r.error or "rollback planning failed")
+        d = r.data
+        plan = RollbackPlan(
+            task_id=task_id,
+            rollback_units=list(d["rollback_units"]),
+            keep_units=list(d["keep_units"]),
+            rollback_symbols=list(d["rollback_symbols"]),
+            keep_symbols=list(d["keep_symbols"]),
+            shared_symbols=list(d["shared_symbols"]),
+            rollback_files=list(d["rollback_files"]),
+            keep_files=list(d["keep_files"]),
+            couplings=list(d["couplings"]),
+            affected_routes=list(affected_routes or []),
+            policy_result=d.get("policy_result"),
+            recommendation=d["recommendation"],
+            decision_ids=list(d["decision_ids"]))
+        if scope:
+            for did in plan.decision_ids:
+                scope.produced(decision=did)
         return plan

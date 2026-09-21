@@ -277,3 +277,69 @@ class TestRuntimeLLMGating:
         assert llm.calls == 0, "确定性 skill 拿不到 LLM"
         rt.run("resolve_target", {"query": "怎么改账号校验"})
         assert llm.calls == 1, "白名单 skill 才注入 LLM"
+
+
+# ================================================================ 11B：agents 委托 skills
+class TestAgentsDelegateToSkills:
+    def test_every_agent_declares_skills(self):
+        from src.agents import (ChangeIntelligenceAgent, ImpactSliceAgent,
+                                Orchestrator, RepositoryNavigator,
+                                RollbackPlanner)
+        from src.agents.verifier import (DeterministicVerifier,
+                                         SemanticVerifier)
+        for cls in (RepositoryNavigator, ChangeIntelligenceAgent,
+                    ImpactSliceAgent, RollbackPlanner, DeterministicVerifier,
+                    SemanticVerifier):
+            assert cls.SKILLS, cls.ROLE
+            assert cls.READS, "READS 清单保留（兼容）"
+
+    def test_scopes_carry_skills_and_delegation_leaves_trail(self, broker):
+        from src.agents import Orchestrator
+        o = Orchestrator(broker)
+        n0 = len(broker.rec.calls)
+        r = o.run(DEMO_QUERY, keep_hint=DEMO_KEEP)
+        new = broker.rec.calls[n0:]
+        # scope 同时记录能力清单与 skill 清单
+        assert r.scopes["RepositoryNavigator"].skills == ["resolve_target"]
+        assert r.scopes["RollbackPlanner"].skills == ["safe_rollback"]
+        # agent 轨迹与 skill 轨迹并存（委托真实发生）
+        assert "agent:RepositoryNavigator:navigate" in new
+        assert "skill:resolve_target:run" in new
+        assert "skill:safe_rollback:run" in new
+        # 归属沿用 agent 名：verifier 字符串与 9L 时代一致
+        names = {v.verifier for v in r.verdicts}
+        assert "DeterministicVerifier" in names
+        assert "SemanticVerifier" in names
+        assert "EvidenceVerificationSkill" not in names
+
+    def test_navigator_no_longer_imports_search(self):
+        """11G 前置：agent 模块源码不 import search/semantica。"""
+        import src.agents.navigator as nav
+        src_text = Path(nav.__file__).read_text()
+        for banned in ("src.search", "src.semantica", "subprocess",
+                       "src.git_history"):
+            assert banned not in src_text
+
+    def test_planner_arbitrate_tie_goes_to_problem(self):
+        from src.agents.change_intel import UnitMatch
+        from src.agents.rollback import RollbackPlanner
+        m = lambda uid, score=2.0, commit="c1": UnitMatch(
+            unit_id=uid, commit=commit, label="auth", score=score)
+        planner = RollbackPlanner.__new__(RollbackPlanner)  # 纯函数，无需 broker
+        prob, keep = planner.arbitrate(
+            [m("cu:a"), m("cu:x", score=9.0, commit="c2")],
+            [m("cu:a"), m("cu:b")])
+        # cu:a 平局（2.0 vs 2.0）→ 归问题侧；cu:b 独占 → keep；
+        # cu:x 在别的 commit 上 → 被 keep 钉住的 commit 过滤
+        assert [x.unit_id for x in prob] == ["cu:a"]
+        assert [x.unit_id for x in keep] == ["cu:b"]
+
+    def test_agent_path_registers_agent_attributed_findings(self, broker):
+        """agent 委托路径的 finding 归属沿用 agent 名（与 9L 时代一致）。"""
+        from src.agents.navigator import RepositoryNavigator
+        nav = RepositoryNavigator(broker)
+        res = nav.find_target(DEMO_QUERY)
+        assert res.feature_id == "feature:AuthLogin"
+        produced = [f for f in broker.all_findings()
+                    if f.id == res.finding_id]
+        assert produced and produced[0].producer == "RepositoryNavigator"

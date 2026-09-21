@@ -5,6 +5,7 @@ Agent 之间共享的是*结构化事实* —— evidence、finding、decision�
 agent 在一个 ScopedContext 下运行，其中写明：
 
   - 它可以从 broker 读什么（能力清单，按方法名）
+  - 它委托哪些 skill 执行（SKILLS 清单，11B）
   - 它可以生长哪个 task view（有界、带审计）
   - 它产出的 evidence/finding/decision（自己的输出轨迹）
 
@@ -22,7 +23,8 @@ from src.semgraph.task_view import TaskGraphView
 class ScopedContext:
     role: str
     task_id: str
-    reads: list[str] = field(default_factory=list)   # broker 方法名
+    reads: list[str] = field(default_factory=list)   # broker 方法名（9K 兼容）
+    skills: list[str] = field(default_factory=list)  # 委托的 skill 名（11B）
     task_view: TaskGraphView | None = None
     evidence_ids: list[str] = field(default_factory=list)
     finding_ids: list[str] = field(default_factory=list)
