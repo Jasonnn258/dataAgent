@@ -40,6 +40,7 @@ class SkillRuntime:
         def _exec() -> SkillResult:
             result = skill.run(ctx, guard)
             result.capabilities_used = sorted(guard.used)
+            result.broker_calls = guard.call_count
             return result
 
         # 11F：结构化记录器上开 skill span（耗时/证据关联/父子链）；

@@ -35,6 +35,7 @@ class CapabilityGuard:
         self._skill = skill_name
         self._declared = list(declared or [])
         self.used: set[str] = set()
+        self.call_count = 0             # 能力调用次数（11J 评估指标）
 
     def _check(self, method: str, capability: str) -> None:
         if not capability_allowed(capability, self._declared):
@@ -43,6 +44,7 @@ class CapabilityGuard:
                 f"{capability!r} (broker.{method}) — declare it in "
                 f"SkillSpec.allowed_capabilities")
         self.used.add(capability)
+        self.call_count += 1
 
     def __getattr__(self, item: str):
         # 延迟导入避免循环依赖（context_broker 不反向 import skills）

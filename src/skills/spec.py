@@ -47,6 +47,7 @@ class SkillResult:
     error: str = ""
     trace_id: str = ""
     capabilities_used: list[str] = field(default_factory=list)  # 11C 守卫回填
+    broker_calls: int = 0            # 能力门面调用次数（11J 评估）
 
     @property
     def ok(self) -> bool:
