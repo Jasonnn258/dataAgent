@@ -247,7 +247,104 @@ class TestEvidenceFindingsConflicts:
         assert broker.get_precedents(category="nonexistent") == []
 
 
-# ================================================================ 9I policy
+# ================================================================ 9F/9G verification & conflicts
+class TestVerificationAndConflicts:
+    def test_verify_requires_registered_evidence(self, broker):
+        from src.errors import DataAgentError
+        from src.semgraph.objects import Finding
+        f = Finding.make("bare claim cannot be verified at all", "V0")
+        broker.add_finding(f)
+        with pytest.raises(DataAgentError):
+            broker.set_finding_status(f.id, "verified", verifier="V0")
+
+    def test_verify_blocked_by_unresolved_conflict(self, broker):
+        from src.errors import DataAgentError
+        from src.semgraph.objects import Evidence, EvidenceType, Finding
+        ev = Evidence.make(EvidenceType.GIT_BLAME, "t-vc", "sym:z1", payload="b")
+        broker.add_evidence(ev)
+        f1 = Finding.make("btnQ affects navbar only", "A9", [ev.id])
+        f2 = Finding.make("btnQ affects settings too", "B9", [ev.id])
+        broker.add_finding(f1)
+        broker.add_finding(f2)
+        assert broker.conflicts_involving(f1.id)
+        with pytest.raises(DataAgentError) as err:
+            broker.set_finding_status(f1.id, "verified", verifier="V")
+        assert "conflict" in str(err.value).lower()
+
+    def test_resolve_conflict_lets_winner_verify(self, broker):
+        from src.errors import DataAgentError
+        from src.semgraph.objects import Evidence, EvidenceType, Finding
+        ev = Evidence.make(EvidenceType.GIT_BLAME, "t-rc", "sym:z2", payload="b")
+        broker.add_evidence(ev)
+        f1 = Finding.make("btnW affects navbar only", "A8", [ev.id])
+        f2 = Finding.make("btnW affects settings too", "B8", [ev.id])
+        # f3 shares the btnW/navbar topic with f1 — a *chained* dispute that
+        # must independently block verification (topic model is coarse by
+        # design; the verifier resolves disputes one pair at a time)
+        f3 = Finding.make("btnW affects navbar and footer", "C8", [ev.id])
+        broker.add_finding(f1)
+        broker.add_finding(f2)
+        broker.add_finding(f3)
+        c = next(c for c in broker.conflicts_involving(f1.id)
+                 if f2.id in (c.finding_a, c.finding_b))
+        assert c in broker.unresolved_conflicts()
+        broker.resolve_conflict(c, "navbar-only is what blame shows",
+                                winner=f1.id, resolver="EvidenceVerifier")
+        assert c not in broker.unresolved_conflicts()
+        assert broker._findings[f2.id].status == "contradicted"
+        # strict guard: the open f1-f3 dispute still blocks verification
+        with pytest.raises(DataAgentError):
+            broker.set_finding_status(f1.id, "verified", verifier="EvidenceVerifier")
+        for chained in [x for x in broker.conflicts_involving(f1.id)
+                        if not x.resolved]:
+            broker.resolve_conflict(chained, "chained topic dispute resolved",
+                                    winner=f1.id, resolver="EvidenceVerifier")
+        w = broker.set_finding_status(f1.id, "verified", verifier="EvidenceVerifier")
+        assert w.status == "verified"
+        node = broker.graph.node(f1.id)
+        assert node.props["status"] == "verified"
+        assert node.props["verified_by"] == "EvidenceVerifier"
+        # the resolution itself is an auditable decision
+        assert any(d.category == "conflict_resolution"
+                   for d in broker.get_precedents(category="conflict_resolution"))
+
+    def test_verify_happy_path(self, broker):
+        from src.semgraph.objects import Evidence, EvidenceType, Finding
+        ev = Evidence.make(EvidenceType.TEST, "t-vh", "sym:vh1", payload="tests pass")
+        broker.add_evidence(ev)
+        f = Finding.make("hunkHeader renders commit headers", "V1", [ev.id])
+        broker.add_finding(f)
+        out = broker.set_finding_status(f.id, "verified",
+                                        verifier="DeterministicVerifier")
+        assert out.status == "verified"
+
+    def test_evidence_about_target(self, broker):
+        from src.semgraph.objects import Evidence, EvidenceType
+        ev = Evidence.make(EvidenceType.AST, "t-ea", "sym:zz9", payload="p")
+        broker.add_evidence(ev)
+        assert any(e.id == ev.id for e in broker.evidence_about("sym:zz9"))
+        assert broker.evidence_about("sym:zz9", EvidenceType.GIT_DIFF) == []
+
+    def test_unsupported_findings_detection(self, broker):
+        from src.semgraph.objects import Finding
+        f = Finding.make("claims evidence that was never registered", "GHOST1")
+        f.evidence_ids.append("evid:never-registered")
+        broker.add_finding(f)
+        assert f.id in {x.id for x in broker.unsupported_findings()}
+
+    def test_evidence_provenance_chain(self, broker):
+        from src.semgraph.objects import Evidence, EvidenceType
+        base = Evidence.make(EvidenceType.AST, "t-pc", "sym:pc1", payload="base")
+        broker.add_evidence(base)
+        derived = Evidence.make(EvidenceType.GRAPH_PATH, "t-pc2", "sym:pc1",
+                                payload="derived",
+                                provenance={"derived_from": [base.id]})
+        broker.add_evidence(derived)
+        node = broker.graph.node(derived.id)
+        assert node.props.get("provenance", {}).get("derived_from") == [base.id]
+
+
+
 class TestPolicyGate:
     def test_shared_symbol_human_review(self, broker):
         r = broker.check_policy("rollback_keep_same_symbol", {

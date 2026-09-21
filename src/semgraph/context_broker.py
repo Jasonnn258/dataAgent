@@ -241,10 +241,13 @@ class ContextBroker:
                 raise GraphError(f"evidence id collision with different facts: {ev.id}")
             return existing
         self._evidence[ev.id] = ev
-        self.graph.add_node(Node(ev.id, NodeType.EVIDENCE,
-                                 props={"type": ev.type.value, "source": ev.source,
-                                        "target": ev.target, "location": ev.location,
-                                        "payload": ev.payload[:300]}))
+        props = {"type": ev.type.value, "source": ev.source,
+                 "target": ev.target, "location": ev.location,
+                 "payload": ev.payload[:300], "producer": ev.producer,
+                 "timestamp": ev.timestamp}
+        if ev.provenance:  # upstream evidence ids — audit chains (9F)
+            props["provenance"] = dict(list(ev.provenance.items())[:5])
+        self.graph.add_node(Node(ev.id, NodeType.EVIDENCE, props=props))
         if self.graph.node(ev.target):
             self.graph.add_edge(Edge(ev.target, ev.id, EdgeType.SUPPORTED_BY,
                                      props={"role": "about"}))
@@ -300,6 +303,83 @@ class ContextBroker:
     @property
     def conflicts(self) -> list[Conflict]:
         return list(self._conflicts)
+
+    # ------------------------------------------------------------ verification (9F/9G)
+    def evidence_about(self, target_id: str,
+                       ev_type: EvidenceType | None = None) -> list[Evidence]:
+        """All registered evidence about a graph node (optionally by type)."""
+        out = [e for e in self._evidence.values() if e.target == target_id]
+        if ev_type is not None:
+            out = [e for e in out if e.type == ev_type]
+        return sorted(out, key=lambda e: e.timestamp)
+
+    def unresolved_conflicts(self) -> list[Conflict]:
+        return [c for c in self._conflicts if not c.resolved]
+
+    def conflicts_involving(self, finding_id: str) -> list[Conflict]:
+        return [c for c in self._conflicts
+                if finding_id in (c.finding_a, c.finding_b)]
+
+    def unsupported_findings(self) -> list[Finding]:
+        """Findings citing evidence ids that were never registered — their
+        SUPPORTED_BY edges point nowhere. Feeds the policy gate."""
+        return [f for f in self._findings.values()
+                if f.evidence_ids and not all(e in self._evidence
+                                              for e in f.evidence_ids)]
+
+    def set_finding_status(self, finding_id: str, status: str,
+                           verifier: str = "") -> Finding:
+        """Status transitions with guards (9F/9G):
+        - verified requires registered evidence AND no unresolved conflict
+        - the verifier's name lands on the graph node (audit, not CoT)"""
+        f = self._findings.get(finding_id)
+        if f is None:
+            raise DataAgentError(f"unknown finding {finding_id!r}")
+        if status not in ("proposed", "verified", "unsupported", "contradicted"):
+            raise DataAgentError(f"invalid finding status {status!r}")
+        if status == "verified":
+            if not f.evidence_ids:
+                raise DataAgentError(
+                    f"cannot verify {finding_id!r}: no evidence cited — "
+                    "a finding without evidence is unsupported, never verified")
+            missing = [e for e in f.evidence_ids if e not in self._evidence]
+            if missing:
+                raise DataAgentError(
+                    f"cannot verify {finding_id!r}: unregistered evidence {missing}")
+            open_c = [c for c in self.conflicts_involving(finding_id)
+                      if not c.resolved]
+            if open_c:
+                raise DataAgentError(
+                    f"cannot verify {finding_id!r}: {len(open_c)} unresolved "
+                    "conflict(s) — resolve the conflict first")
+        f.status = status
+        node = self.graph.node(finding_id)
+        if node is not None:
+            node.props["status"] = status
+            if verifier:
+                node.props[f"{status}_by"] = verifier
+        return f
+
+    def resolve_conflict(self, conflict: Conflict, resolution: str,
+                         winner: str | None = None,
+                         resolver: str = "verifier") -> Conflict:
+        """The verifier owns conflict resolution. Both findings survive in
+        the registry; the loser is marked contradicted, and the resolution
+        is recorded as a Decision (audit trail, 9H integration)."""
+        if conflict not in self._conflicts:
+            raise DataAgentError("unknown conflict — not registered by this broker")
+        conflict.resolved = True
+        conflict.resolution = resolution
+        if winner:
+            loser = next(fid for fid in (conflict.finding_a, conflict.finding_b)
+                         if fid != winner)
+            self.set_finding_status(loser, "contradicted", verifier=resolver)
+        self.record_decision(Decision.make(
+            "conflict_resolution", resolution, target=conflict.topic,
+            related_findings=[conflict.finding_a, conflict.finding_b],
+            risk="medium", decision_maker=resolver,
+            reason_summary=f"winner={winner or 'none'}"))
+        return conflict
 
     # ------------------------------------------------------------ decisions
     def record_decision(self, d: Decision) -> Decision:
