@@ -444,3 +444,48 @@ class TestCapabilityEnforcement:
         # 仲裁真源也可直接跑（纯函数，无 broker）
         from src.skills.safe_rollback import arbitrate
         assert arbitrate([], []) == ([], [])
+
+
+# ================================================================ 11D：broker 内部 Service 化
+class TestBrokerServices:
+    def test_broker_holds_eight_services(self, broker):
+        from src.services import (ChangeService, DecisionService,
+                                  EvidenceService, GraphQueryService,
+                                  PolicyService, ResolutionService,
+                                  SemanticService, TaskViewService)
+        pairs = [("graph", GraphQueryService), ("resolution", ResolutionService),
+                 ("views", TaskViewService), ("change", ChangeService),
+                 ("evidence", EvidenceService), ("decision", DecisionService),
+                 ("policy", PolicyService), ("semantic", SemanticService)]
+        for name, cls in pairs:
+            svc = getattr(broker, f"_{name}_svc")
+            assert isinstance(svc, cls), name
+
+    def test_legacy_private_aliases_are_live(self, broker):
+        """旧私有入口指向服务的活注册表（同一对象，不是拷贝）。"""
+        assert broker._findings is broker._evidence_svc.findings
+        assert broker._evidence is broker._evidence_svc.evidence
+        assert broker._views is broker._views_svc.views
+        assert broker.REASON_SUMMARY_CAP == broker._decision_svc.REASON_SUMMARY_CAP
+
+    def test_delegation_preserves_evidence_minting(self, broker):
+        """经 broker 门面的读取仍在读取时刻铸造 evidence（原则 5；
+        同 id 事实幂等去重，重复读取不重复注册）。"""
+        from src.semgraph.objects import EvidenceType
+        n0 = len(broker.all_evidence())
+        ctx = broker.get_target_context("sym:src/lib/auth.ts::validateAccount")
+        assert ctx.evidence_ids
+        ev = broker.get_evidence(ctx.evidence_ids)[0]
+        assert ev.type == EvidenceType.AST
+        assert ev.source == "broker:get_target_context"
+        registered = {e.id for e in broker.all_evidence()}
+        assert ev.id in registered
+        assert len(broker.all_evidence()) in (n0, n0 + 1)
+
+    def test_layer_gating_still_loud_after_extraction(self, seeded):
+        from src.errors import DataAgentError
+        from src.semgraph.context_broker import ContextBroker
+        b = ContextBroker(FIXTURE, ToolRecorder(),
+                          layers={"code", "semantic"})
+        with pytest.raises(DataAgentError):
+            b.create_task_view("t", ["sym:src/lib/auth.ts::validateAccount"])
