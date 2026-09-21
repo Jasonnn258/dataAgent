@@ -220,3 +220,18 @@ def _zh_alias(query: str) -> list[tuple[str, list[str]]]:
     q = query.lower()
     return [(name, terms) for name, terms in ZH_FEATURE_ALIASES
             if any(t.lower() in q for t in terms)]
+
+
+def query_vocabulary(query: str, feature_name: str) -> list[str]:
+    """给变更分析用的查询词表：query 自身词元 + 命中 feature 的别名词汇。
+    （Phase 11A：从 navigator._terms_for 移入，agent/skill 经 broker 调用，
+    search 依赖留在 semgraph 内部。）"""
+    terms = {query}
+    qt = extract_terms(query)
+    terms |= {t.lower() for t, _ in qt.all_search_terms()}
+    terms |= set(qt.cjk_segments) | set(qt.cjk_subterms)
+    terms.add(feature_name.lower())
+    for name, alias_terms in ZH_FEATURE_ALIASES:
+        if name == feature_name:
+            terms |= {t.lower() for t in alias_terms}
+    return sorted(t for t in terms if t)

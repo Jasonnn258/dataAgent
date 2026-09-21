@@ -15,8 +15,7 @@ APIEndpoint、UIString、Commit、ChangeUnit。
 MODIFIES、CO_CHANGED_WITH。
 
 这是*结构+git 事实之上的可查询索引* —— Semantica 负责组织上下文/
-provenance，绝不替代 AST parser（spec §3）。这里的所有查询都是只读
-图读取。
+provenance，绝不替代 AST parser（spec §3）。这里的所有查询都是只读图读取。
 """
 from __future__ import annotations
 

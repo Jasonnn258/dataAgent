@@ -74,6 +74,7 @@ class ContextBroker:
         self._decisions: dict[str, Decision] = {}
         self._views: dict[str, TaskGraphView] = {}
         self._counter = 0
+        self._mapper_obj = None        # 语义层懒加载（11A：收进门面）
 
     def layer_active(self, name: str) -> bool:
         return name in self.layers
@@ -460,6 +461,26 @@ class ContextBroker:
             policy=(f"{result.rule.name} v{result.rule.version} -> "
                     f"{result.action.value}") if result.rule else "none-triggered"))
         return result
+
+    # ------------------------------------------------------------ 语义门面（11A）
+    def _mapper(self):
+        """SemanticMapper 懒加载 + 确定性播种（幂等）。语义层未激活时
+        返回 None —— 调用方据此走确定性退路。"""
+        if self._mapper_obj is None and self.layer_active("semantic"):
+            from src.semgraph.semantic_mapper import SemanticMapper
+            self._mapper_obj = SemanticMapper(self.graph, self.rec)
+            self._mapper_obj.seed_deterministic()
+        return self._mapper_obj
+
+    def map_semantic_candidates(self, query: str, llm=None) -> list:
+        """模糊 query → feature 候选（agent/skill 不再自己构造 mapper）。"""
+        mapper = self._mapper()
+        return mapper.map_query(query, llm=llm) if mapper is not None else []
+
+    def build_query_terms(self, query: str, feature_name: str) -> list[str]:
+        """变更分析词表（query 词元 + feature 别名）。"""
+        from src.semgraph.semantic_mapper import query_vocabulary
+        return query_vocabulary(query, feature_name)
 
     # ------------------------------------------------------------ 工具
     def node(self, node_id: str) -> Node | None:
