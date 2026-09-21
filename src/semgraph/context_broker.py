@@ -184,22 +184,44 @@ class ContextBroker:
 
     # ------------------------------------------------------------ change
     def get_change_context(self, target_id: str) -> ChangeContext:
-        """Temporal context. ChangeUnit nodes land in 9E; commits already
-        exist from the v1 git layer."""
+        """Temporal context: the ChangeUnits and Commits that last touched
+        the target, most recent first, with the HEAD association explicit.
+        Rollback planning starts from the units here — never from 'the
+        commit' (spec 9E: commit != change unit)."""
         ctx = ChangeContext(target=target_id)
         g = self.graph
         fid = self._file_of(target_id)
-        if fid:
-            for commit in g.neighbors(fid, rel_types={EdgeType.MODIFIES},
-                                      direction="in"):
-                ctx.last_commits.append(commit)
-            for cu in g.neighbors(fid, rel_types={EdgeType.MODIFIES},
-                                  direction="in"):
-                if cu.type == NodeType.CHANGE_UNIT:
-                    ctx.change_units.append(cu)
-            ctx.last_commits = [c for c in ctx.last_commits
-                                if c.type == NodeType.COMMIT][:5]
+        if not fid:
+            return ctx
+        units = [cu for cu in g.neighbors(fid, rel_types={EdgeType.MODIFIES},
+                                          direction="in")
+                 if cu.type == NodeType.CHANGE_UNIT]
+        units.sort(key=self._commit_date_of, reverse=True)
+        ctx.change_units = units[:10]
+        commits = [c for c in g.neighbors(fid, rel_types={EdgeType.CHANGED_BY},
+                                          direction="out")
+                   if c.type == NodeType.COMMIT]
+        commits += [c for c in g.neighbors(fid, rel_types={EdgeType.MODIFIES},
+                                           direction="in")
+                    if c.type == NodeType.COMMIT]
+        dedup: dict[str, Node] = {c.id: c for c in commits}
+        ctx.last_commits = sorted(dedup.values(),
+                                  key=self._commit_date_of, reverse=True)[:10]
+        # provenance minted at read time (principle 5)
+        ev = Evidence.make(
+            EvidenceType.CHANGE_UNIT, source="broker:get_change_context",
+            target=target_id, location=fid,
+            payload=f"{len(ctx.change_units)} change unit(s), "
+                    f"{len(ctx.last_commits)} commit(s) touch {fid}")
+        self.add_evidence(ev)
+        ctx.evidence_ids.append(ev.id)
         return ctx
+
+    def _commit_date_of(self, node: Node) -> str:
+        if node.type == NodeType.CHANGE_UNIT:
+            cn = self.graph.node(f"commit:{node.props.get('commit', '')}")
+            return cn.props.get("date", "") if cn else ""
+        return node.props.get("date", "")
 
     def _file_of(self, node_id: str) -> str | None:
         n = self.graph.node(node_id)

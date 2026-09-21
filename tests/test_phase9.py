@@ -290,7 +290,88 @@ class TestPolicyGate:
             assert rule.version and rule.name == name and rule.description
 
 
-# ================================================================ 9D semantic
+# ================================================================ 9E change graph
+from src.semgraph.schema_v2 import EdgeType as E2, NodeType as N2  # noqa: E402
+
+
+@pytest.fixture(scope="module")
+def broker_cg(seeded):
+    """Broker with the change layer built (fresh instance; does not disturb
+    the plain `broker` fixture used by earlier sections)."""
+    from src.semgraph.change_graph import build_change_graph
+    from src.semgraph.context_broker import ContextBroker
+    b = ContextBroker(FIXTURE, ToolRecorder())
+    build_change_graph(b)
+    return b
+
+
+class TestChangeGraph:
+    def test_commit_contains_change_units(self, broker_cg):
+        g = broker_cg.graph
+        commits_with_units = [n for n in g.nodes_of_type(N2.COMMIT)
+                              if any(e.type == E2.CONTAINS_CHANGE
+                                     for e in g.edges_from(n.id))]
+        assert commits_with_units, "CONTAINS_CHANGE edges must exist"
+
+    def test_mixed_commit_splits_into_units(self, broker_cg):
+        """The acceptance-demo commit: one commit, distinct title/auth units.
+        commit == change unit must NOT be assumed."""
+        g = broker_cg.graph
+        by_label: dict[str, list] = {}
+        for cu in g.nodes_of_type(N2.CHANGE_UNIT):
+            by_label.setdefault(cu.props["commit"], []).append(cu)
+        multi = {sha: cus for sha, cus in by_label.items() if len(cus) >= 2}
+        assert multi, "fixture has mixed commits; at least one must split"
+        labels = {u.props["semantic_label"]
+                  for cus in multi.values() for u in cus}
+        assert "title" in labels and "auth" in labels
+
+    def test_unit_modifies_and_temporal_props(self, broker_cg):
+        g = broker_cg.graph
+        cu = next(n for n in g.nodes_of_type(N2.CHANGE_UNIT)
+                  if n.props.get("semantic_label") == "auth")
+        outs = g.edges_from(cu.id)
+        mod_files = [e for e in outs
+                     if e.type == E2.MODIFIES and e.dst.startswith("file:")]
+        assert mod_files
+        for e in mod_files:
+            assert e.props.get("valid_from_commit") == cu.props["commit"]
+            assert "observed_at" in e.props
+        # upward edge: the unit knows the commit that introduced it
+        assert any(e.type == E2.INTRODUCED_BY
+                   and e.dst == f"commit:{cu.props['commit']}" for e in outs)
+
+    def test_units_carry_change_unit_evidence(self, broker_cg):
+        cu = next(n for n in broker_cg.graph.nodes_of_type(N2.CHANGE_UNIT))
+        ev_id = cu.props.get("evidence_id")
+        assert ev_id and broker_cg.get_evidence([ev_id]), \
+            "facts enter the graph with provenance (principle 5)"
+
+    def test_change_context_prefers_units_over_commits(self, broker_cg):
+        t = broker_cg.resolve_target("validateAccount")
+        cc = broker_cg.get_change_context(t.id)
+        assert cc.change_units, "9E change context must surface units"
+        assert any(u.props["semantic_label"] == "auth" for u in cc.change_units)
+        assert cc.last_commits and cc.evidence_ids
+
+    def test_hunks_are_atomic_units(self, broker_cg):
+        hunks = broker_cg.graph.nodes_of_type(N2.HUNK)
+        assert hunks and all("file" in h.props and "new_start" in h.props
+                             for h in hunks)
+
+    def test_unit_modifies_feature_when_seeded(self, broker_cg):
+        """With the semantic layer seeded, the title unit reaches the
+        SystemBranding feature (demo path: keep the good title change)."""
+        from src.semgraph.change_graph import build_change_graph
+        from src.semgraph.semantic_mapper import SemanticMapper
+        b = broker_cg
+        SemanticMapper(b.graph, b.rec).seed_deterministic()
+        build_change_graph(b)  # idempotent re-run links units -> features
+        in_edges = [e for e in b.graph.edges_to("feature:SystemBranding")
+                    if e.type == E2.MODIFIES]
+        assert in_edges, "ChangeUnit MODIFIES Feature must exist after seeding"
+
+
 @pytest.fixture(scope="module")
 def mapper(seeded):
     from src.semgraph.context_broker import ContextBroker
