@@ -1,9 +1,9 @@
-"""RepositoryNavigator (Phase 9J): fuzzy natural language -> feature target.
+"""RepositoryNavigator（Phase 9J）：模糊自然语言 → feature 目标。
 
-The only agent where an LLM may participate — and even here it may only
-pick among existing feature names (SemanticMapper contract); every pick
-stays a candidate until deterministic tools corroborate it. A failed
-navigation is loud: DataAgentError, never a silent empty result.
+唯一允许 LLM 参与的 agent —— 即便在这里，LLM 也只能在已有 feature 名
+字里挑（SemanticMapper 契约）；每一次挑选都停在 candidate 级，直到确
+定性工具给出佐证。导航失败要大声报错：DataAgentError，绝不静默返回空
+结果。
 """
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ class NavigationResult:
     feature_id: str = ""
     feature_name: str = ""
     related_symbols: list[str] = field(default_factory=list)
-    terms: list[str] = field(default_factory=list)     # query terms for CI
+    terms: list[str] = field(default_factory=list)     # 给 CI 的查询词表
     finding_id: str = ""
     candidates: list[SemanticTargetCandidate] = field(default_factory=list)
 
@@ -40,7 +40,7 @@ class RepositoryNavigator:
         cands = self.mapper.map_query(query, llm=self.llm) \
             if self.mapper is not None else []
         if not cands:
-            # no feature matched — deterministic symbol/filename fallback
+            # 没有 feature 命中 —— 确定性符号/文件名退路
             node = self.broker.resolve_target(query)
             ev = Evidence.make(EvidenceType.AST, source="navigator:resolve",
                                target=node.id,
@@ -72,8 +72,8 @@ class RepositoryNavigator:
 
 
 def _terms_for(query: str, feature_name: str) -> list[str]:
-    """Terms the change-intelligence agent will look for in units: the
-    query's own tokens plus the alias vocabulary of the matched feature."""
+    """change-intelligence agent 要在单元里找的词表：query 自身词元 +
+    命中 feature 的别名词汇。"""
     from src.search.keywords import extract_terms
     from src.semgraph.semantic_mapper import ZH_FEATURE_ALIASES
     terms = {query}

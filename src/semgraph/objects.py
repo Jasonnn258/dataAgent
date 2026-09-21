@@ -1,12 +1,10 @@
-"""First-class data objects (Phase 9F/9G/9H/9I groundwork).
+"""一等数据对象（Phase 9F/9G/9H/9I 地基）。
 
-Evidence / Finding / Decision / Policy are data, not log lines (principle 4):
-- provenance exists from the moment a fact enters the system, not appended
-  afterwards (principle 5)
-- findings never overwrite each other; contradictions are explicit edges in
-  a conflict registry (principle 6)
-- no hidden CoT is stored; Decision.reason_summary is an audit-facing
-  explanation, not model-private reasoning (spec 9H)
+Evidence / Finding / Decision / Policy 是数据，不是日志行（原则 4）：
+- provenance 在事实进入系统的那一刻就存在，不是事后补挂（原则 5）
+- finding 之间绝不互相覆盖；矛盾是冲突注册表里的显式边（原则 6）
+- 不存隐藏 CoT；Decision.reason_summary 是面向审计的解释，不是模型
+  私有推理（spec 9H）
 """
 from __future__ import annotations
 
@@ -33,13 +31,13 @@ class EvidenceType(str, Enum):
 class Evidence:
     id: str
     type: EvidenceType
-    source: str                       # producer tool id, e.g. "git:diff"
-    target: str                       # graph node id it is about
-    location: str = ""                # file:line / sha / node id
-    payload: str = ""                 # bounded human-readable fact
-    producer: str = ""                # agent/tool that created it
+    source: str                       # 产生它的工具 id，如 "git:diff"
+    target: str                       # 所属图节点 id
+    location: str = ""                # file:line / sha / 节点 id
+    payload: str = ""                 # 有界的人类可读事实
+    producer: str = ""                # 创建它的 agent/工具
     timestamp: str = field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%S%z"))
-    provenance: dict = field(default_factory=dict)  # upstream ids (evidence chains)
+    provenance: dict = field(default_factory=dict)  # 上游 id（证据链）
 
     @classmethod
     def make(cls, type: EvidenceType, source: str, target: str, **kw) -> "Evidence":
@@ -51,11 +49,11 @@ class Evidence:
 @dataclass
 class Finding:
     id: str
-    statement: str                    # one factual claim, verifiable
+    statement: str                    # 单条可验证的事实断言
     evidence_ids: list[str] = field(default_factory=list)
-    producer: str = ""                # agent name
+    producer: str = ""                # agent 名
     status: str = "proposed"          # proposed | verified | unsupported | contradicted
-    contradicts: list[str] = field(default_factory=list)  # finding ids
+    contradicts: list[str] = field(default_factory=list)  # 冲突的对端 finding id
     timestamp: str = field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%S%z"))
 
     @property
@@ -76,13 +74,13 @@ class Decision:
     category: str                     # rollback | keep | expand_context | ...
     task_id: str = ""
     target: str = ""
-    outcome: str = ""                 # what was decided
+    outcome: str = ""                 # 决定内容
     evidence_ids: list[str] = field(default_factory=list)
     related_findings: list[str] = field(default_factory=list)
     risk: str = "low"                 # low | medium | high
-    decision_maker: str = ""          # agent or "human:<name>"
-    reason_summary: str = ""          # audit-facing, NOT model-private CoT
-    policy: str = ""                  # "rule v_version -> ACTION" when gated
+    decision_maker: str = ""          # agent 或 "human:<name>"
+    reason_summary: str = ""          # 面向审计，绝不是模型私有 CoT
+    policy: str = ""                  # 门控时记 "rule v_version -> ACTION"
     timestamp: str = field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%S%z"))
 
     @classmethod
@@ -104,7 +102,7 @@ class PolicyRule:
     version: str
     description: str
     action: PolicyAction
-    trigger: str = ""                 # human-readable trigger condition
+    trigger: str = ""                 # 人类可读的触发条件
 
 
 @dataclass
@@ -118,10 +116,10 @@ class PolicyResult:
         return self.action == PolicyAction.PASS
 
 
-# ---------------------------------------------------------------- conflicts
+# ---------------------------------------------------------------- 冲突
 @dataclass
 class Conflict:
-    """Two findings that disagree. Both survive; the verifier owns resolution."""
+    """两条互不服气的 finding。双方都保留；裁决权在 verifier。"""
     finding_a: str
     finding_b: str
     topic: str = ""
@@ -129,7 +127,7 @@ class Conflict:
     resolution: str = ""
 
 
-# ---------------------------------------------------------------- verdicts (9L)
+# ---------------------------------------------------------------- 裁决（9L）
 class VerdictStatus(str, Enum):
     SUPPORTED = "SUPPORTED"
     PARTIALLY_SUPPORTED = "PARTIALLY_SUPPORTED"
@@ -138,9 +136,9 @@ class VerdictStatus(str, Enum):
 
 @dataclass
 class Verdict:
-    """A verifier's categorical judgment on one finding. Deliberately no
-    numeric confidence — a fake '0.87' is less honest than three states."""
+    """verifier 对单条 finding 的三档定性裁决。刻意不带数值 confidence
+    —— 假精确的 "0.87" 不如三个诚实状态。"""
     finding_id: str
     status: VerdictStatus
     verifier: str
-    checks: list[str] = field(default_factory=list)   # what was actually checked
+    checks: list[str] = field(default_factory=list)   # 实际做过的检查

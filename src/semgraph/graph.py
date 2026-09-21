@@ -1,22 +1,22 @@
-"""Semantica Context Graph adapter (mode=semantica).
+"""Semantica Context Graph 适配层（mode=semantica）。
 
-Builds the code+git knowledge into semantica's canonical in-memory
-KnowledgeGraph (entities/relationships dicts), backed by:
+把代码 + git 知识建进 semantica 规范的内存 KnowledgeGraph
+（entities/relationships dict），依赖：
 
-- semantica.kg.KnowledgeGraph          — the graph container
-- semantica.kg.GraphBuilder            — construction/validation
-- semantica.kg.PathFinder              — multi-hop path queries
-- semantica.provenance.ProvenanceManager — evidence/provenance per entity
-  (kg.ProvenanceTracker is deprecated in 0.6.8)
+- semantica.kg.KnowledgeGraph          —— 图容器
+- semantica.kg.GraphBuilder            —— 构建/校验
+- semantica.kg.PathFinder              —— 多跳路径查询
+- semantica.provenance.ProvenanceManager —— 实体级 evidence/provenance
+  （kg.ProvenanceTracker 在 0.6.8 已弃用）
 
-Node types (spec §3): Repository, File, Function, Class, Component,
-APIEndpoint, UIString, Commit, ChangeUnit.
-Edge types: DEFINES, IMPORTS, CALLS, REFERENCES, CONTAINS, CHANGED_BY,
-MODIFIES, CO_CHANGED_WITH.
+节点类型（spec §3）：Repository、File、Function、Class、Component、
+APIEndpoint、UIString、Commit、ChangeUnit。
+边类型：DEFINES、IMPORTS、CALLS、REFERENCES、CONTAINS、CHANGED_BY、
+MODIFIES、CO_CHANGED_WITH。
 
-This is a *queryable index over structural+git facts* — Semantica organizes
-context/provenance; it never replaces the AST parser (spec §3).
-All queries here are read-only graph reads.
+这是*结构+git 事实之上的可查询索引* —— Semantica 负责组织上下文/
+provenance，绝不替代 AST parser（spec §3）。这里的所有查询都是只读
+图读取。
 """
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ def _import_semantica():
         from semantica.kg.path_finder import PathFinder
         from semantica.provenance import ProvenanceManager
         return KnowledgeGraph, GraphBuilder, PathFinder, ProvenanceManager
-    except Exception as e:  # ImportError or ABI issues — surface, never swallow
+    except Exception as e:  # ImportError 或 ABI 问题 —— 显式抛出，绝不吞
         raise GraphError(
             f"semantica is required for mode=semantica: {e}. "
             f"Install with: pip install --no-deps semantica==0.6.8 "
@@ -43,7 +43,7 @@ def _import_semantica():
 
 
 class ContextGraph:
-    """Thin wrapper: build from CodeIndex+Git facts, query for task contexts."""
+    """薄封装：从 CodeIndex+Git 事实建图，供任务上下文查询。"""
 
     def __init__(self, repo: Path, rec: ToolRecorder | None = None):
         self.repo = repo
@@ -51,12 +51,12 @@ class ContextGraph:
         KG, GB, PF, PT = _import_semantica()
         self._KG, self._GB, self._PF, self._PT = KG, GB, PF, PT
         self.kg = None            # semantica KnowledgeGraph
-        self.graph_result = None  # GraphBuilder.build() result dict
+        self.graph_result = None  # GraphBuilder.build() 结果 dict
         self.prov = PT()
         self._by_id: dict[str, dict] = {}
-        self._adj: dict[str, list[tuple[str, str, str]]] = {}  # id -> [(rel, dir, other)]
+        self._adj: dict[str, list[tuple[str, str, str]]] = {}  # id -> [(rel, 方向, 对端)]
 
-    # ---------------------------------------------------------------- build
+    # ---------------------------------------------------------------- 构建
     def build(self, idx, git_api=None, commits_limit: int = 50) -> "ContextGraph":
         entities: list[dict] = []
         rels: list[dict] = []
@@ -72,7 +72,7 @@ class ContextGraph:
 
         repo_id = ent(f"repo:{self.repo.name}", "Repository", path=str(self.repo))
 
-        # files + symbols
+        # 文件 + 符号
         for file in idx.files:
             fid = ent(f"file:{file}", "File", path=file)
             rel(repo_id, fid, "CONTAINS")
@@ -85,33 +85,33 @@ class ContextGraph:
                       name=s.name, file=s.file, line=s.line_start,
                       exported=s.exported)
             rel(f"file:{s.file}", sid, "DEFINES")
-        # imports
+        # 导入
         for ri in idx.import_edges:
             if ri.source_file:
                 rel(f"file:{ri.importer}", f"file:{ri.source_file}", "IMPORTS",
                     names=",".join(ri.names))
-        # calls
+        # 调用
         for e in idx.calls:
             src = f"scope:{e.caller}"
             if src not in self._by_id:
                 ent(src, "Scope", name=e.caller, file=e.caller_file)
-            # edge targets the *name*; resolution to a definition happens at
-            # query time (there may be 0..n definitions per name)
+            # 边指向*名字*；解析到定义发生在查询时（一个名字可能对应
+            # 0..n 个定义）
             tgt = f"callname:{e.callee_short}"
             if tgt not in self._by_id:
                 ent(tgt, "CallName", name=e.callee_short)
             rel(src, tgt, "CALLS", at=f"{e.file}:{e.line}")
-        # jsx references
+        # JSX 引用
         for fp in idx.parses.values():
             for r in fp.jsx_refs:
                 rel(f"file:{r.file}", f"callname:{r.component}", "REFERENCES",
                     at=f"{r.file}:{r.line}")
-        # api endpoints
+        # API 端点
         for ep in idx.api_endpoints:
             eid = ent(f"api:{ep.file}", "APIEndpoint", route=ep.route_path,
                       methods=ep.methods, file=ep.file)
             rel(f"file:{ep.file}", eid, "DEFINES")
-        # ui strings (string literals + jsx text)
+        # UI 字符串（字符串字面量 + JSX 文本）
         for fp in idx.parses.values():
             for u in fp.ui_strings:
                 uid = f"uistr:{u.file}:{u.line}:{zlib.crc32(u.text.encode('utf-8'))}"
@@ -119,9 +119,8 @@ class ContextGraph:
                     ent(uid, "UIString", text=u.text[:200], file=u.file, line=u.line)
                     rel(f"file:{u.file}", uid, "CONTAINS")
 
-        # name resolution: callname:X -> every definition named X.
-        # Without these edges the graph is disconnected (scope -> callname
-        # has no onward edge), so multi-hop paths must traverse them.
+        # 名字解析：callname:X -> 每个名为 X 的定义。没有这些边图是断的
+        #（scope -> callname 没有出边），多跳路径必须经过它们。
         syms_by_name: dict[str, list[str]] = {}
         for e in entities:
             if e["id"].startswith("sym:"):
@@ -131,7 +130,7 @@ class ContextGraph:
                 for sid in syms_by_name.get(e.get("name", ""), []):
                     rel(e["id"], sid, "REFERENCES", resolved="possible")
 
-        # git layer
+        # git 层
         if git_api is not None:
             try:
                 commits = git_api.log(max_count=commits_limit)
@@ -145,7 +144,7 @@ class ContextGraph:
                 for (a, b), n in co.items():
                     if a in idx.files and b in idx.files:
                         rel(f"file:{a}", f"file:{b}", "CO_CHANGED_WITH", support=n)
-            except Exception as e:  # graph build shouldn't die on git hiccups
+            except Exception as e:  # 建图不能死于 git 的小毛病
                 if self.rec:
                     self.rec.warn(f"context graph: git layer skipped ({e})")
 
@@ -153,7 +152,7 @@ class ContextGraph:
         self.kg = KG(entities=entities, relationships=rels,
                      metadata={"repo": str(self.repo), "builder": "dataAgent-semgraph"})
         builder = GB()
-        # our source is a pre-extracted dict — disable text extraction
+        # 输入是预抽取的 dict —— 关掉文本抽取
         self.graph_result = builder.build(
             {"entities": entities, "relationships": rels}, extract=False)
         self._build_adj()
@@ -170,9 +169,8 @@ class ContextGraph:
             self._adj.setdefault(t, []).append((r["type"], "in", s))
 
     def _build_nx(self) -> None:
-        """Undirected networkx projection so semantica PathFinder can run
-        real queries. Undirected on purpose: a "chain of relevance" between
-        caller and callee must traverse CALLS edges in both directions."""
+        """无向 networkx 投影，让 semantica PathFinder 能跑真查询。刻意
+        无向：caller 与 callee 之间的"关联链"需要双向穿过 CALLS 边。"""
         import networkx as nx
         self.nx = nx.Graph()
         for e in self.kg.entities:
@@ -180,10 +178,10 @@ class ContextGraph:
         for r in self.kg.relationships:
             self.nx.add_edge(r["source"], r["target"], type=r["type"])
 
-    # ---------------------------------------------------------------- queries
+    # ---------------------------------------------------------------- 查询
     def neighbors(self, node_id: str, rel_types: set[str] | None = None,
                   direction: str = "both", depth: int = 1) -> list[dict]:
-        """BFS neighborhood; returns entity dicts (deduped, source excluded)."""
+        """BFS 邻域；返回实体 dict（去重、不含起点）。"""
         seen: dict[str, int] = {}
         frontier = [node_id]
         for _ in range(depth):
@@ -201,7 +199,7 @@ class ContextGraph:
         return [self._by_id[i] for i in seen if i in self._by_id]
 
     def path(self, start: str, end: str, max_hops: int = 6) -> list[str] | None:
-        """Relation path via semantica PathFinder over the nx projection."""
+        """经 semantica PathFinder 在 nx 投影上查关联路径。"""
         if start == end:
             return [start]
         try:
@@ -217,17 +215,16 @@ class ContextGraph:
                 ("Function", "Method", "Class", "Component")]
 
     def callname_defs(self, name: str) -> list[dict]:
-        """Resolve a CallName to definition symbols with that name."""
+        """把 CallName 解析到同名的定义符号。"""
         return [e for e in self.kg.entities
                 if e.get("name") == name and e["type"] in
                 ("Function", "Method", "Class", "Component")]
 
     def route_reaching(self, symbol_id: str, max_hops: int = 4) -> list[dict]:
-        """API endpoints that reach the symbol within max_hops CALLS hops.
+        """在 max_hops 跳 CALLS 内触达该符号的 API 端点。
 
-        Walks CALLS edges inward (callers of callers...), resolving each
-        CallName to its definitions; a route counts if its defining file
-        also DEFINES an APIEndpoint.
+        向内走 CALLS 边（caller 的 caller……），把每个 CallName 解析到
+        定义；路由的定义文件同时 DEFINES 一个 APIEndpoint 才算数。
         """
         result: list[dict] = []
         seen_defs: set[str] = set()
@@ -247,7 +244,7 @@ class ContextGraph:
                             for api in self.neighbors(f["id"], rel_types={"DEFINES"}, direction="out"):
                                 if api["type"] == "APIEndpoint":
                                     result.append(api)
-            # map callnames -> their defs' scopes so the walk can continue upward
+            # callname -> 各自定义的 scope，让游走能继续向上
             frontier = set()
             for cid in callers:
                 if cid.startswith("scope:"):
@@ -255,7 +252,7 @@ class ContextGraph:
                 elif cid.startswith("callname:"):
                     name = self._by_id[cid].get("name", "")
                     for d in self.callname_defs(name):
-                        frontier.add(f"scope:{d['id'][4:]}")  # scope keyed by qualified name
+                        frontier.add(f"scope:{d['id'][4:]}")  # scope 按限定名做 key
             if not frontier:
                 break
         return result
@@ -264,7 +261,7 @@ class ContextGraph:
         return [e for e in self.kg.entities if e["type"] == "UIString"
                 and substr in str(e.get("text", ""))]
 
-    # ---------------------------------------------------------------- provenance
+    # ---------------------------------------------------------------- 溯源
     def track(self, entity_id: str, source: str, **details) -> None:
         self.prov.track_entity(entity_id, source, metadata=dict(details))
 

@@ -1,4 +1,4 @@
-"""Phase 10 tests: G0-G4 graph-layer ablation + acceptance demo contract."""
+"""Phase 10 测试：G0-G4 图层消融 + 验收演示契约。"""
 import subprocess
 import sys
 from pathlib import Path
@@ -9,7 +9,6 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 FIXTURE = ROOT / "experiments" / "fixtures" / "fixture_repo"
 
-from src.config import Settings  # noqa: E402,F401
 from src.schema import ToolRecorder  # noqa: E402
 
 QUERY = "登录逻辑改坏了，帮我找出问题修改，准备回退"
@@ -61,7 +60,7 @@ class TestGAblation:
         _, _, b = reports["G0"]
         assert b.graph.nodes_of_type(NodeType.CHANGE_UNIT) == []
         assert b.graph.nodes_of_type(NodeType.FEATURE) == []
-        assert b.graph.nodes_of_type(NodeType.FUNCTION)      # code survives
+        assert b.graph.nodes_of_type(NodeType.FUNCTION)      # code 层还在
 
     def test_g1_semantic_navigates_but_no_units(self, reports):
         status, r, b = reports["G1"]
@@ -74,7 +73,7 @@ class TestGAblation:
         assert status == "ok"
         assert any("bbdc659f-U2" in u.unit_id for u in r.problem_units)
         assert any("bbdc659f-U1" in u.unit_id for u in r.keep_units)
-        assert r.plan.policy_result is None            # decision layer off
+        assert r.plan.policy_result is None            # decision 层未激活
         assert "UNGATED" in r.plan.recommendation
 
     def test_g3_task_view_is_bounded(self, reports):
@@ -91,7 +90,7 @@ class TestGAblation:
         assert r.plan.policy_result.action.value == "HUMAN_REVIEW"
 
     def test_monotonic_layer_growth(self, reports):
-        """Each level's active layer set is a subset of the next."""
+        """每一级的激活层集合都是下一级的子集。"""
         names = list(LEVELS)
         for a, nxt in zip(names, names[1:]):
             assert LEVELS[a] < LEVELS[nxt]
@@ -116,7 +115,7 @@ class TestLayerGating:
         from src.semgraph.enrich import get_context_graph
         full = GraphV2.from_v1(get_context_graph(FIXTURE, ToolRecorder()))
         code_only = full.prune_to_layers({"code"})
-        # no cross-layer edges survive
+        # 跨层边一条都不留
         from src.semgraph.schema_v2 import LAYER_OF_EDGE
         assert all(LAYER_OF_EDGE[e.type] == "code"
                    for e in code_only.all_edges())

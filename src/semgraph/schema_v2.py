@@ -1,25 +1,24 @@
-"""Graph Schema v2 (Phase 9A).
+"""Graph Schema v2（Phase 9A）。
 
-Upgrades the Phase 5 structural graph into six logical layers:
+把 Phase 5 的结构图升级为六个逻辑层：
 
-    Code Graph        Repository/File/Function/Class/Component/...
-    Semantic Graph    Feature/Capability/Concept/Requirement
-    Change Graph      Commit/Diff/Hunk/ChangedSymbol/ChangeUnit/...
-    Evidence Graph    Task/Hypothesis/Finding/Evidence
-    Task Graph        Task views over the above (see task_view.py)
-    Decision Graph    Decision/Policy
+    Code Graph        代码层 Repository/File/Function/Class/Component/...
+    Semantic Graph    语义层 Feature/Capability/Concept/Requirement
+    Change Graph      变更层 Commit/Diff/Hunk/ChangedSymbol/ChangeUnit/...
+    Evidence Graph    证据层 Task/Hypothesis/Finding/Evidence
+    Task Graph        任务层 以上各层的有界切片（见 task_view.py）
+    Decision Graph    决策层 Decision/Policy
 
-Design rules (spec §9A + engineering principles):
-- every node has a stable id (v1 prefixes kept: file:/sym:/commit:/... so the
-  Phase 5 ContextGraph converts losslessly in both directions)
-- temporal edges carry OPTIONAL valid_from_commit / valid_to_commit /
-  observed_at in props — no full historical reconstruction is attempted
-  (v1 commitment), but HEAD relations link to the ChangeUnit/Commit that
-  last touched them
-- conflicting props are never silently overwritten (principle 6):
-  add_node with a different type on an existing id raises GraphError
-- this schema is our OWN dataclass layer; semantica.kg objects stay behind
-  the ContextBroker (principle: Semantica is infrastructure, not framework)
+设计约束（spec §9A + 工程原则）：
+- 每个节点有稳定 id（保留 v1 前缀：file:/sym:/commit:/...，Phase 5 的
+  ContextGraph 可无损双向转换）
+- 时间边在 props 里带可选的 valid_from_commit / valid_to_commit /
+  observed_at —— 不做完整历史重建（v1 的承诺），但 HEAD 关系能关联到
+  最近触达它的 ChangeUnit/Commit
+- 属性冲突绝不静默覆盖（原则 6）：对已有 id 用不同 type add_node 直接
+  raise GraphError
+- 这套 schema 是我们自己的 dataclass 层；semantica.kg 对象留在
+  ContextBroker 后面（原则：Semantica 是基础设施，不是框架）
 """
 from __future__ import annotations
 
@@ -45,8 +44,8 @@ class NodeType(str, Enum):
     UI_STRING = "UIString"
     CONFIG = "Config"
     PROMPT = "Prompt"
-    # internal helper kinds carried over from v1 (not in the spec list but
-    # needed for name resolution paths; they stay reachable via adapter)
+    # v1 沿用的内部辅助类型（不在 spec 清单里，但名字解析路径需要；
+    # 经 adapter 始终可达）
     SCOPE = "Scope"
     CALL_NAME = "CallName"
     # ---- Semantic Graph --------------------------------------------------
@@ -73,7 +72,7 @@ class NodeType(str, Enum):
 
 
 class EdgeType(str, Enum):
-    # structural
+    # 结构
     CONTAINS = "CONTAINS"
     DEFINES = "DEFINES"
     IMPORTS = "IMPORTS"
@@ -83,18 +82,18 @@ class EdgeType(str, Enum):
     WRITES = "WRITES"
     ROUTES_TO = "ROUTES_TO"
     TESTS = "TESTS"
-    # semantic
+    # 语义
     IMPLEMENTS = "IMPLEMENTS"
     IMPLEMENTED_BY = "IMPLEMENTED_BY"
     REPRESENTS = "REPRESENTS"
     RELATED_TO = "RELATED_TO"
-    # change / temporal
+    # 变更 / 时间
     CONTAINS_CHANGE = "CONTAINS_CHANGE"
     MODIFIES = "MODIFIES"
     INTRODUCED_BY = "INTRODUCED_BY"
     CHANGED_BY = "CHANGED_BY"
     CO_CHANGED_WITH = "CO_CHANGED_WITH"
-    # evidence / decision
+    # 证据 / 决策
     SUPPORTED_BY = "SUPPORTED_BY"
     CONTRADICTS = "CONTRADICTS"
     DERIVED_FROM = "DERIVED_FROM"
@@ -105,7 +104,7 @@ class EdgeType(str, Enum):
     APPROVED_BY = "APPROVED_BY"
 
 
-# layer membership for stats / selective building (G0..G4 ablation)
+# 层归属表：stats 统计与选择性建层用（Phase 10 G0..G4 消融）
 LAYER_OF_NODE: dict[NodeType, str] = {}
 for _n, _layer in [
     *[(t, "code") for t in (NodeType.REPOSITORY, NodeType.FILE, NodeType.FUNCTION,
@@ -144,7 +143,7 @@ for _e, _layer in [
 
 
 def stable_id(*parts: str, salt: str = "") -> str:
-    """Deterministic id for unstructured content (evidence payloads etc.)."""
+    """非结构化内容（evidence payload 等）的确定性 id。"""
     basis = "\x1f".join(parts) + (f"\x1e{salt}" if salt else "")
     return f"{zlib.crc32(basis.encode('utf-8')):08x}"
 
@@ -156,7 +155,7 @@ class Node:
     props: dict = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if isinstance(self.type, str):  # tolerate string input from v1 dicts
+        if isinstance(self.type, str):  # 容忍 v1 dict 直接传字符串 type
             self.type = NodeType(self.type)
 
     def layer(self) -> str:
@@ -174,7 +173,7 @@ class Edge:
         if isinstance(self.type, str):
             self.type = EdgeType(self.type)
 
-    # temporal helpers (optional fields live in props by design)
+    # 时间字段辅助（可选字段按设计放在 props 里）
     def set_validity(self, from_commit: str | None, to_commit: str | None = None,
                      observed_at: str | None = None) -> "Edge":
         if from_commit:
@@ -190,20 +189,20 @@ class Edge:
 
 
 class GraphV2:
-    """In-memory typed graph over the v2 schema.
+    """v2 schema 上的内存 typed graph。
 
-    Not a replacement for the v1 ContextGraph/semantica.kg bridge — v1 stays
-    the query engine for PathFinder; GraphV2 is the canonical *schema* the
-    broker exposes. Both views are kept in sync by the broker.
+    不替代 v1 ContextGraph/semantica.kg 桥 —— v1 仍是 PathFinder 的查询
+    引擎；GraphV2 是 broker 对外暴露的规范 *schema*。两个视图由 broker
+    负责保持同步。
     """
 
     def __init__(self) -> None:
         self._nodes: dict[str, Node] = {}
-        self._edges: dict[int, Edge] = {}      # keyed by (src,dst,type,salt)
+        self._edges: dict[int, Edge] = {}      # key 为 (src,dst,type,salt)
         self._out: dict[str, list[Edge]] = {}
         self._in: dict[str, list[Edge]] = {}
 
-    # ------------------------------------------------------------- mutation
+    # ------------------------------------------------------------- 写入
     @staticmethod
     def _ekey(src: str, dst: str, etype: EdgeType, props: dict) -> int:
         salt = props.get("salt", "")
@@ -222,7 +221,7 @@ class GraphV2:
         if merge_props:
             for k, v in node.props.items():
                 if k in existing.props and existing.props[k] != v:
-                    # keep first writer, record the disagreement
+                    # 先写者胜，分歧记录在案
                     conflicts = existing.props.setdefault("_prop_conflicts", {})
                     conflicts[k] = v
                 else:
@@ -233,8 +232,8 @@ class GraphV2:
         key = self._ekey(edge.src, edge.dst, edge.type, edge.props)
         existing = self._edges.get(key)
         if existing is not None:
-            # v1 emits one edge per occurrence (e.g. every call site); v2
-            # keeps one typed edge and counts occurrences — no info lost
+            # v1 每次出现发一条边（如每个调用点）；v2 只留一条 typed edge
+            # 并累计次数 —— 信息不丢
             existing.props["count"] = int(existing.props.get("count", 1)) + 1
             existing.props.update({k: v for k, v in edge.props.items()
                                    if k not in existing.props and k != "count"})
@@ -247,7 +246,7 @@ class GraphV2:
         self._in.setdefault(edge.dst, []).append(edge)
         return edge
 
-    # ------------------------------------------------------------- queries
+    # ------------------------------------------------------------- 查询
     def node(self, nid: str) -> Node | None:
         return self._nodes.get(nid)
 
@@ -306,9 +305,10 @@ class GraphV2:
                 "by_layer": self.layer_stats()}
 
     def prune_to_layers(self, active: set[str]) -> "GraphV2":
-        """Return a copy restricted to the active layers (Phase 10 G0-G4).
-        A node survives if its layer is active; an edge survives if its own
-        layer is active AND both endpoints survived."""
+        """按激活层裁剪出副本（Phase 10 G0-G4）。
+
+        节点属于激活层才保留；边要自身层激活且两端点都存活才保留。
+        """
         out = GraphV2()
         for n in self._nodes.values():
             if n.layer() in active:
@@ -325,10 +325,10 @@ class GraphV2:
     def all_edges(self) -> list[Edge]:
         return list(self._edges.values())
 
-    # ------------------------------------------------------------- v1 bridge
+    # ------------------------------------------------------------- v1 桥接
     def to_v1_dicts(self) -> tuple[list[dict], list[dict]]:
-        """Render as the v1 (entities/relationships) dict shapes so the
-        Phase 5 semantica.kg pipeline keeps working unchanged."""
+        """渲染成 v1（entities/relationships）dict 形态，Phase 5 的
+        semantica.kg 管线因此一行不用改。"""
         entities = [{"id": n.id, "type": n.type.value, **{
             k: v for k, v in n.props.items() if not k.startswith("_")}}
             for n in self._nodes.values()]
@@ -339,11 +339,11 @@ class GraphV2:
 
     @classmethod
     def from_v1(cls, cg) -> "GraphV2":
-        """Import of the Phase 5 ContextGraph (adapter, spec 9A).
+        """导入 Phase 5 ContextGraph（adapter，spec 9A）。
 
-        v1 tolerates dangling name references (e.g. JSX REFERENCES edges to
-        callnames that never got a node); v2 materialises them as
-        implicit CallName nodes so no edge is silently dropped.
+        v1 容忍悬空的名字引用（如 JSX REFERENCES 指向从未建节点的
+        callname）；v2 把它们物化为隐式 CallName 节点，任何边都不会被
+        静默丢弃。
         """
         g = cls()
         for e in cg.kg.entities:
@@ -362,8 +362,8 @@ class GraphV2:
         return g
 
     def sync_back_to_v1(self, cg) -> None:
-        """Push v2-only content (semantic/evidence/decision layers) into the
-        v1 semantica KnowledgeGraph so PathFinder keeps a full view."""
+        """把 v2 独有的内容（semantic/evidence/decision 层）推回 v1
+        semantica KnowledgeGraph，PathFinder 始终看得到完整视图。"""
         entities, rels = self.to_v1_dicts()
         seen = {e["id"] for e in cg.kg.entities}
         known = {r["source"] + r["target"] + r["type"]
@@ -382,8 +382,8 @@ def _coerce_type(raw: str) -> NodeType:
     try:
         return NodeType(raw)
     except ValueError:
-        # unknown v1 kinds degrade to generic semantic carriers rather than
-        # crashing the import (the id keeps them distinguishable)
+        # v1 未知类型降级为通用语义载体而不是让导入崩溃
+        #（id 保证它们仍可区分）
         return NodeType.CONCEPT
 
 

@@ -1,15 +1,14 @@
-"""Verifiers v2 (Phase 9L): categorical judgments, no fake confidence.
+"""Verifier v2（Phase 9L）：三档定性裁决，拒绝假精确。
 
-DeterministicVerifier — judges findings backed by machine-checkable
-evidence (AST / CALL_PATH / GIT_* / CHANGE_UNIT / GRAPH_PATH / TEST).
-All cited evidence registered and at least one deterministic item =>
-SUPPORTED (and the finding is promoted to `verified`, conflict guards
-apply). None => UNSUPPORTED (finding demoted).
+DeterministicVerifier —— 裁决由机器可查证据（AST / CALL_PATH /
+GIT_* / CHANGE_UNIT / GRAPH_PATH / TEST）支撑的 finding。引用证据全部
+已注册且至少一条确定性 => SUPPORTED（finding 升为 `verified`，冲突
+守卫生效）。一条都没有 => UNSUPPORTED（finding 降级）。
 
-SemanticVerifier — judges findings that lean on semantic-mapping or
-lexical evidence. LLM-derived mappings can corroborate but never verify
-alone: SUPPORTED only when deterministic evidence corroborates, else
-PARTIALLY_SUPPORTED. It never promotes a finding to verified by itself.
+SemanticVerifier —— 裁决依赖 semantic-mapping / lexical 证据的
+finding。LLM 产出的映射只能佐证、永远不能单独verify：有确定性证据佐
+证才 SUPPORTED，否则 PARTIALLY_SUPPORTED。它绝不自行把 finding 升为
+verified。
 """
 from __future__ import annotations
 
@@ -51,14 +50,14 @@ class DeterministicVerifier:
             checks.append("no deterministic evidence — not machine-checkable")
         else:
             status = VerdictStatus.SUPPORTED
-        # promote/demote through the guarded transition; a blocked promote
-        # (open conflict) is reported, never forced
+        # 经带守卫的迁移升/降级；被挡下的升级（存在未解决冲突）要报告，
+        # 绝不硬闯
         if status == VerdictStatus.SUPPORTED:
             try:
                 self.broker.set_finding_status(finding.id, "verified",
                                                verifier=self.ROLE)
                 checks.append("finding promoted to verified")
-            except Exception as e:  # DataAgentError: guard refused
+            except Exception as e:  # DataAgentError：守卫拒绝
                 checks.append(f"verified blocked: {e}")
         elif status == VerdictStatus.UNSUPPORTED:
             self.broker.set_finding_status(finding.id, "unsupported",
@@ -75,7 +74,7 @@ class SemanticVerifier:
         self.broker = broker
 
     def verify(self, finding: Finding) -> Verdict | None:
-        """None = out of scope (no semantic evidence to judge)."""
+        """None = 不归它管（没有语义证据可裁决）。"""
         self.broker.rec.tool(f"agent:{self.ROLE}:verify")
         evidence = self.broker.get_evidence(finding.evidence_ids)
         sem = [e for e in evidence if e.type in SEMANTIC_TYPES]

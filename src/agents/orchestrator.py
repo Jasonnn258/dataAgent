@@ -1,17 +1,17 @@
-"""Orchestrator (Phase 9J): the only coordinator, no logic of its own.
+"""Orchestrator（Phase 9J）：唯一的协调者，自己不带逻辑。
 
-Pipeline for "X broke, roll it back but keep Y from the same commit":
+"X 改坏了，回退它但保留同 commit 里的 Y" 的管线：
 
-    RepositoryNavigator    query -> feature + terms (LLM optional)
-    ChangeIntelligence     terms -> ChangeUnits; keep hint pins the commit
-    ImpactSlice            problem units' symbols -> bounded blast radius
-    RollbackPlanner        unit split -> plan + policy gate + decisions
-    Verifiers              findings -> SUPPORTED / PARTIALLY / UNSUPPORTED
+    RepositoryNavigator    query → feature + 词表（LLM 可选）
+    ChangeIntelligence     词表 → ChangeUnit；keep hint 钉住 commit
+    ImpactSlice            问题单元的符号 → 有界波及面
+    RollbackPlanner        单元拆分 → 计划 + policy gate + decision
+    Verifiers              finding → SUPPORTED / PARTIALLY / UNSUPPORTED
 
-Every step goes through the ContextBroker; nothing here touches git
-(reads happen in the change layer, execution never happens at all).
-Each agent runs under its own ScopedContext (9K); the report carries the
-audit trail — evidence, findings, verdicts, decisions, policy result.
+每一步都走 ContextBroker；这里没有任何代码碰 git（读取发生在变更层，
+执行从头到尾不存在）。每个 agent 在自己的 ScopedContext 下跑（9K）；
+报告携带完整审计轨迹 —— evidence、finding、verdict、decision、policy
+结果。
 """
 from __future__ import annotations
 
@@ -24,7 +24,6 @@ from src.agents.rollback import RollbackPlanner, RollbackPlan
 from src.agents.scopes import ScopedContext
 from src.agents.verifier import DeterministicVerifier, SemanticVerifier
 from src.semgraph.objects import Verdict
-from src.semgraph.schema_v2 import NodeType
 
 
 @dataclass
@@ -41,7 +40,7 @@ class FinalReport:
     scopes: dict[str, ScopedContext] = field(default_factory=dict)
 
     def dump(self) -> str:
-        """Bounded human-readable report (the acceptance-demo output)."""
+        """有界的人类可读报告（验收演示的输出）。"""
         nav = self.navigation
         lines = [f"# rollback analysis — {self.query!r}",
                  f"keep hint: {self.keep_hint!r}" if self.keep_hint else "",
@@ -70,7 +69,7 @@ class FinalReport:
                      f"{sum(len(s.evidence_ids) for s in self.scopes.values())}"
                      if self.scopes else "")
         lines.append("NOTE: nothing was executed — this is a plan, not an action")
-        return "\n".join(ln for ln in lines if ln is not None)
+        return "\n".join(lines)
 
 
 class Orchestrator:
@@ -95,16 +94,14 @@ class Orchestrator:
         report = FinalReport(query=query, keep_hint=keep_hint, task_id=task_id,
                              scopes=scopes)
 
-        # 1. navigate: fuzzy query -> feature + vocabulary
+        # 1. 导航：模糊 query → feature + 词表
         nav = self.navigator.find_target(query, scope=scopes[self.navigator.ROLE])
         report.navigation = nav
 
-        # 2. change intelligence: units matching the vocabularies. A unit
-        #    matching BOTH (e.g. an auth unit whose UI copy contains 系统)
-        #    goes to whichever vocabulary scored it higher — ties to the
-        #    problem side (a suspect stays suspect). The keep hint then
-        #    anchors the commit: "keep Y from the same commit" pins the
-        #    problem search to the commits the user named.
+        # 2. 变更情报：匹配词表的单元。同时命中两套词表的单元（如 UI 文案
+        #    里带"系统"二字的 auth 单元）归给打分更高的那套 —— 平局归问题
+        #    方（嫌疑犯 stays 嫌疑犯）。随后 keep hint 锚定 commit：
+        #    "保留同 commit 里的 Y"把问题搜索钉在用户点名的 commit 上。
         keep_nav = (self.navigator.find_target(
             keep_hint, scope=scopes[self.navigator.ROLE]) if keep_hint else None)
         prob_all = self.change_intel.find_units(
@@ -124,8 +121,8 @@ class Orchestrator:
         report.problem_units = problem_units
         report.keep_units = keep_units
 
-        # 3. impact slice over the problem units' symbols (definitions that
-        #    exist in the code layer; each expansion is audited)
+        # 3. 问题单元符号上的波及面切片（代码层里存在的定义；每次扩展
+        #    都带审计）
         targets = []
         for u in problem_units:
             for s in u.symbols:
@@ -138,16 +135,15 @@ class Orchestrator:
             report.slice = self.impact.slice_impact(
                 targets, task_id, scope=scopes[self.impact.ROLE])
 
-        # 4. rollback plan + policy gate + decisions (no execution, ever)
+        # 4. 回退计划 + policy gate + decision（永远不执行）
         report.plan = self.planner.plan(
             [u.unit_id for u in problem_units],
             [u.unit_id for u in keep_units],
             affected_routes=report.slice.routes if report.slice else [],
             task_id=task_id, scope=scopes[self.planner.ROLE])
 
-        # 5. verify every finding this task produced (deduped: a finding can
-        #    be registered from two find_units passes). Verification itself
-        #    is a capability: G4 (evidence layer) only.
+        # 5. 校验本任务产出的每条 finding（去重：同一 finding 可能被两轮
+        #    find_units 注册）。校验本身是一种能力：仅 G4（evidence 层）。
         if not self.broker.layer_active("evidence"):
             report.verdicts = []
             return report

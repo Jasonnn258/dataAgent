@@ -1,6 +1,6 @@
-"""Phase 9 tests: schema v2, context broker, task view, agents, policy.
+"""Phase 9 测试：schema v2 / context broker / task view / agents / policy。
 
-Organized by phase section; grows as phases land.
+按 phase 小节组织，随阶段落地逐步增长。
 """
 import subprocess
 import sys
@@ -12,7 +12,6 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 FIXTURE = ROOT / "experiments" / "fixtures" / "fixture_repo"
 
-from src.config import Settings  # noqa: E402
 from src.errors import GraphError  # noqa: E402
 from src.schema import ToolRecorder  # noqa: E402
 
@@ -41,7 +40,7 @@ class TestSchemaV2:
         cg = get_context_graph(FIXTURE, ToolRecorder())
         v1_edges = len(cg.kg.relationships)
         g2 = GraphV2.from_v1(cg)
-        # parallel v1 edges merge into counted v2 edges — sum(count) conserved
+        # v1 平行边合并成带 count 的 v2 边 —— sum(count) 守恒
         assert sum(e.props.get("count", 1) for e in g2.all_edges()) == v1_edges
         assert {n.id for n in g2.all_nodes()} >= {e["id"] for e in cg.kg.entities}
 
@@ -86,7 +85,7 @@ class TestSchemaV2:
             g2.sync_back_to_v1(cg)
             assert cg.path("file:src/lib/retry.ts", "feature:t9")
         finally:
-            # the v1 graph cache is process-shared; never leak test nodes
+            # v1 图缓存是进程级共享的；绝不泄漏测试节点
             se._graph_cache.clear()
 
     def test_edge_requires_known_nodes(self, v2):
@@ -179,7 +178,7 @@ class TestTaskGraphView:
         assert len(text) < 400 and "view budget hit" in text
 
     def test_view_grows_only_via_expand(self, broker):
-        # nodes outside the view stay outside until an expand admits them
+        # 视图外的节点保持视图外，直到某次 expand 接纳它
         v = broker.get_task_view("tv-1")
         assert "file:src/lib/db.ts" not in v.selected_nodes
 
@@ -217,7 +216,7 @@ class TestEvidenceFindingsConflicts:
         assert f1.id in f2.contradicts and f2.id in f1.contradicts
         assert any(c.finding_a == f1.id and c.finding_b == f2.id
                    for c in broker.conflicts)
-        # graph carries the explicit CONTRADICTS edge (either direction)
+        # 图里带显式 CONTRADICTS 边（方向不限）
         assert (broker.graph.edge_between(f1.id, f2.id)
                 or broker.graph.edge_between(f2.id, f1.id))
 
@@ -278,9 +277,8 @@ class TestVerificationAndConflicts:
         broker.add_evidence(ev)
         f1 = Finding.make("btnW affects navbar only", "A8", [ev.id])
         f2 = Finding.make("btnW affects settings too", "B8", [ev.id])
-        # f3 shares the btnW/navbar topic with f1 — a *chained* dispute that
-        # must independently block verification (topic model is coarse by
-        # design; the verifier resolves disputes one pair at a time)
+        # f3 与 f1 共享 btnW/navbar 主题 —— 这是*链式*争端，必须独立地
+        # 挡住验证（主题模型刻意偏粗；verifier 逐对解决争端）
         f3 = Finding.make("btnW affects navbar and footer", "C8", [ev.id])
         broker.add_finding(f1)
         broker.add_finding(f2)
@@ -292,7 +290,7 @@ class TestVerificationAndConflicts:
                                 winner=f1.id, resolver="EvidenceVerifier")
         assert c not in broker.unresolved_conflicts()
         assert broker._findings[f2.id].status == "contradicted"
-        # strict guard: the open f1-f3 dispute still blocks verification
+        # 严格守卫：f1-f3 的未决争端仍然挡住验证
         with pytest.raises(DataAgentError):
             broker.set_finding_status(f1.id, "verified", verifier="EvidenceVerifier")
         for chained in [x for x in broker.conflicts_involving(f1.id)
@@ -304,7 +302,7 @@ class TestVerificationAndConflicts:
         node = broker.graph.node(f1.id)
         assert node.props["status"] == "verified"
         assert node.props["verified_by"] == "EvidenceVerifier"
-        # the resolution itself is an auditable decision
+        # 裁决本身就是可审计的 decision
         assert any(d.category == "conflict_resolution"
                    for d in broker.get_precedents(category="conflict_resolution"))
 
@@ -349,7 +347,7 @@ class TestVerificationAndConflicts:
 class TestDecisionMemoryAndGate:
     def test_reason_summary_capped_not_cot(self, broker):
         from src.semgraph.objects import Decision
-        long_reason = "because " * 200  # 1600 chars of pseudo-CoT
+        long_reason = "because " * 200  # 1600 字符的伪 CoT
         d = broker.record_decision(Decision.make(
             "keep", "keep unit X", target="file:x",
             decision_maker="RollbackPlanner", reason_summary=long_reason))
@@ -377,8 +375,8 @@ class TestDecisionMemoryAndGate:
 
     def test_gate_block_beats_human_review(self, broker):
         r = broker.run_policy_gate({
-            "rollback_symbols": ["s"], "keep_symbols": ["s"],   # HUMAN_REVIEW
-            "unsupported_findings": 3})                          # BLOCK
+            "rollback_symbols": ["s"], "keep_symbols": ["s"],   # 触发 HUMAN_REVIEW
+            "unsupported_findings": 3})                          # 触发 BLOCK
         assert r.action.value == "BLOCK" and r.rule.name == "unsupported_finding"
 
     def test_gate_human_review_when_only_review_rules_trigger(self, broker):
@@ -446,8 +444,8 @@ from src.semgraph.schema_v2 import EdgeType as E2, NodeType as N2  # noqa: E402
 
 @pytest.fixture(scope="module")
 def broker_cg(seeded):
-    """Broker with the change layer built (fresh instance; does not disturb
-    the plain `broker` fixture used by earlier sections)."""
+    """建好变更层的 broker（新实例；不打扰前面小节用的普通 `broker`
+    fixture）。"""
     from src.semgraph.change_graph import build_change_graph
     from src.semgraph.context_broker import ContextBroker
     b = ContextBroker(FIXTURE, ToolRecorder())
@@ -464,8 +462,8 @@ class TestChangeGraph:
         assert commits_with_units, "CONTAINS_CHANGE edges must exist"
 
     def test_mixed_commit_splits_into_units(self, broker_cg):
-        """The acceptance-demo commit: one commit, distinct title/auth units.
-        commit == change unit must NOT be assumed."""
+        """验收演示那个 commit：一个 commit，title/auth 两个不同单元。
+        绝不假设 commit == change unit。"""
         g = broker_cg.graph
         by_label: dict[str, list] = {}
         for cu in g.nodes_of_type(N2.CHANGE_UNIT):
@@ -487,7 +485,7 @@ class TestChangeGraph:
         for e in mod_files:
             assert e.props.get("valid_from_commit") == cu.props["commit"]
             assert "observed_at" in e.props
-        # upward edge: the unit knows the commit that introduced it
+        # 向上的边：单元知道引入它的 commit
         assert any(e.type == E2.INTRODUCED_BY
                    and e.dst == f"commit:{cu.props['commit']}" for e in outs)
 
@@ -495,12 +493,12 @@ class TestChangeGraph:
         cu = next(n for n in broker_cg.graph.nodes_of_type(N2.CHANGE_UNIT))
         ev_id = cu.props.get("evidence_id")
         assert ev_id and broker_cg.get_evidence([ev_id]), \
-            "facts enter the graph with provenance (principle 5)"
+            "事实进图必须带 provenance（原则 5）"
 
     def test_change_context_prefers_units_over_commits(self, broker_cg):
         t = broker_cg.resolve_target("validateAccount")
         cc = broker_cg.get_change_context(t.id)
-        assert cc.change_units, "9E change context must surface units"
+        assert cc.change_units, "9E 变更上下文必须给出单元"
         assert any(u.props["semantic_label"] == "auth" for u in cc.change_units)
         assert cc.last_commits and cc.evidence_ids
 
@@ -510,13 +508,13 @@ class TestChangeGraph:
                              for h in hunks)
 
     def test_unit_modifies_feature_when_seeded(self, broker_cg):
-        """With the semantic layer seeded, the title unit reaches the
-        SystemBranding feature (demo path: keep the good title change)."""
+        """语义层播种后，title 单元能连到 SystemBranding feature
+        （演示路径：保留改好的标题改动）。"""
         from src.semgraph.change_graph import build_change_graph
         from src.semgraph.semantic_mapper import SemanticMapper
         b = broker_cg
         SemanticMapper(b.graph, b.rec).seed_deterministic()
-        build_change_graph(b)  # idempotent re-run links units -> features
+        build_change_graph(b)  # 幂等重跑，把单元连到 feature
         in_edges = [e for e in b.graph.edges_to("feature:SystemBranding")
                     if e.type == E2.MODIFIES]
         assert in_edges, "ChangeUnit MODIFIES Feature must exist after seeding"
@@ -539,12 +537,12 @@ DEMO_KEEP = "保留同 commit 中已经改好的系统标题"
 
 class TestAgentOrchestrator:
     def test_demo_end_to_end(self, orch):
-        """验收演示: same commit, two units — rollback auth, keep title."""
+        """验收演示：同一 commit、两个单元 —— 回退 auth、保留 title。"""
         o, _ = orch
         r = o.run(DEMO_QUERY, keep_hint=DEMO_KEEP)
         assert [u.unit_id.split(":")[-1] for u in r.problem_units] == ["bbdc659f-U2"]
         assert [u.unit_id.split(":")[-1] for u in r.keep_units] == ["bbdc659f-U1"]
-        # commit == change unit is never assumed: one commit, two units
+        # 绝不假设 commit == change unit：一个 commit、两个单元
         assert r.problem_units[0].commit == r.keep_units[0].commit
         assert r.problem_units[0].unit_id != r.keep_units[0].unit_id
         assert r.slice.routes == ["/api/auth/login"]
@@ -559,7 +557,7 @@ class TestAgentOrchestrator:
         new = b.rec.calls[n_before:]
         assert new, "orchestrator must leave a tool-call trail"
         assert not any(c.startswith("git:") for c in new), \
-            "agents go through the broker; the agent layer itself runs no git"
+            "agent 一律走 broker；agent 层自身不跑任何 git"
 
     def test_scoped_contexts_per_role(self, orch):
         from src.agents.scopes import ScopedContext
@@ -579,7 +577,7 @@ class TestAgentOrchestrator:
         r = o.run(DEMO_QUERY, keep_hint=DEMO_KEEP)
         assert r.verdicts
         assert all(v.status in set(VerdictStatus) for v in r.verdicts)
-        # semantic-only navigation stays a lead, never a verified fact
+        # 纯语义导航只当线索用，永远不当已验证事实
         sem = [v for v in r.verdicts if v.verifier == "SemanticVerifier"]
         assert any(v.status == VerdictStatus.PARTIALLY_SUPPORTED for v in sem)
 
@@ -589,7 +587,7 @@ class TestAgentOrchestrator:
         ci = r.scopes["ChangeIntelligenceAgent"]
         verified = [b._findings[f] for f in ci.finding_ids
                     if b._findings[f].status == "verified"]
-        assert verified, "unit matches are deterministic facts — verified"
+        assert verified, "单元匹配是确定性事实 —— 应 verified"
 
     def test_plan_records_decisions_with_policy(self, orch):
         o, b = orch
@@ -609,7 +607,7 @@ class TestAgentOrchestrator:
     def test_no_keep_hint_returns_all_matches(self, orch):
         o, _ = orch
         r = o.run("登录验证逻辑出问题了")
-        assert r.problem_units, "unpinned query still finds suspects"
+        assert r.problem_units, "未钉住 commit 的查询仍能找到嫌疑"
         assert r.keep_units == []
         assert r.plan is not None
 
@@ -628,14 +626,13 @@ def mapper(seeded):
 class TestSemanticMapper:
     def test_routes_and_components_seed_features(self, mapper):
         names = {n.props.get("name") for n in
-                 mapper.g.nodes_of_type(__import__("src.semgraph.schema_v2",
-                                                   fromlist=["NodeType"]).NodeType.FEATURE)}
+                 mapper.g.nodes_of_type(N2.FEATURE)}
         assert "AuthLogin" in names and "AuthNav" in names
 
     def test_root_layout_seeds_system_branding(self, mapper):
         f = mapper.g.node("feature:SystemBranding")
         assert f is not None and f.props["status"] == "seeded"
-        # IMPLEMENTS edge points at the layout file
+        # IMPLEMENTS 边指向 layout 文件
         dsts = [e.dst for e in mapper.g.edges_from("feature:SystemBranding")]
         assert "file:src/app/layout.tsx" in dsts
 
@@ -647,7 +644,7 @@ class TestSemanticMapper:
         cands = mapper.map_query("系统标题在哪里修改")
         assert cands[0].feature_id == "feature:SystemBranding"
         assert cands[0].related_symbols == ["file:src/app/layout.tsx"]
-        assert cands[0].evidence, "candidates must carry their evidence"
+        assert cands[0].evidence, "候选必须自带证据"
 
     def test_login_query_maps_to_auth_feature(self, mapper):
         cands = mapper.map_query("登录验证的逻辑在哪里")
@@ -658,7 +655,7 @@ class TestSemanticMapper:
         assert cands and cands[0].feature_id == "feature:Generate"
 
     def test_llm_absent_stays_deterministic(self, mapper):
-        # no llm configured: mapper works, returns only lexical/alias hits
+        # 未配置 llm：mapper 照常工作，只返回词面/别名命中
         cands = mapper.map_query("登录验证的逻辑在哪里", llm=None)
         assert all(c.mapping_method in ("lexical", "seed-alias") for c in cands)
 
@@ -679,7 +676,7 @@ class TestSemanticMapper:
         cands = mapper.map_query("怎么改账号校验", llm=FakeLLM())
         hit = [c for c in cands if c.feature_id == "feature:AuthLogin"
                and c.mapping_method == "llm"]
-        assert hit and hit[0].status == "candidate"  # never auto-fact
-        # and it was NOT promoted into the graph as an unevidenced fact
+        assert hit and hit[0].status == "candidate"  # 永不自动成事实
+        # 且它没有被当成无证据事实提升进图
         node = mapper.g.node("feature:AuthLogin")
         assert node.props.get("status") == "seeded"

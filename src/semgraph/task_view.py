@@ -1,16 +1,15 @@
-"""TaskGraphView (Phase 9C): the bounded graph slice a task actually sees.
+"""TaskGraphView（Phase 9C）：任务实际看到的有界图切片。
 
-Core idea: a task NEVER gets the whole graph as context (principle: no
-default whole-graph retrieval). A view is built by
+核心思想：任务永远不拿整张图当上下文（原则：禁止默认整图检索）。视图
+按三步构建：
 
-    select    — initial 1-hop projection around the target
-    project   — which node/edge types are carried into the view
-    expand    — agent-driven growth along specific relations (audited)
+    select    —— 围绕目标做初始 1 跳投影
+    project   —— 决定哪些节点/边类型被带进视图
+    expand    —— agent 沿指定关系定向生长（全程审计）
 
-Every expansion is recorded in expansion_history with its trigger, so the
-final report can say exactly why a node entered the context. Stats
-(task_graph_nodes / task_graph_edges / expansion_count) feed the Phase 10
-context-size comparison.
+每次扩展都带 trigger 记进 expansion_history，最终报告因此能说清每个
+节点是"为什么"进入上下文的。stats（task_graph_nodes / task_graph_edges /
+expansion_count）供 Phase 10 做上下文规模对比。
 """
 from __future__ import annotations
 
@@ -26,7 +25,7 @@ class Expansion:
     depth: int
     added_nodes: list[str] = field(default_factory=list)
     added_edges: list[tuple[str, str, str]] = field(default_factory=list)
-    trigger: str = ""                 # which agent asked, and why
+    trigger: str = ""                 # 哪个 agent 发起的、为什么
 
 
 @dataclass
@@ -37,14 +36,14 @@ class TaskGraphView:
     selected_edges: dict[int, Edge] = field(default_factory=dict)
     expansion_history: list[Expansion] = field(default_factory=list)
     evidence_ids: list[str] = field(default_factory=list)
-    _next_edge_key: int = 1           # local numbering, ids stable per view
+    _next_edge_key: int = 1           # 视图内局部编号，id 在视图内稳定
 
-    # ------------------------------------------------------------- build
+    # ------------------------------------------------------------- 构建
     @classmethod
     def select(cls, graph: GraphV2, task_id: str, targets: list[str],
                rel_types: set[EdgeType] | None = None,
                depth: int = 1, trigger: str = "init") -> "TaskGraphView":
-        """Initial projection: target nodes + their neighborhood."""
+        """初始投影：目标节点 + 它们的邻域。"""
         view = cls(task_id=task_id, target_nodes=list(targets))
         exp = Expansion(seeds=list(targets),
                         relations=tuple(rel_types or ()), depth=depth,
@@ -79,11 +78,11 @@ class TaskGraphView:
         self.selected_nodes[node.id] = node
         exp.added_nodes.append(node.id)
 
-    # ------------------------------------------------------------- expand
+    # ------------------------------------------------------------- 扩展
     def expand(self, graph: GraphV2, seeds: list[str],
                relations: set[EdgeType] | None = None, depth: int = 1,
                trigger: str = "") -> Expansion:
-        """Grow the view from seed nodes along given relations (audited)."""
+        """从 seed 节点沿指定关系生长视图（带审计）。"""
         exp = Expansion(seeds=list(seeds), relations=tuple(relations or ()),
                         depth=depth, trigger=trigger)
         seeds = [s for s in seeds if s in self.selected_nodes or graph.node(s)]
@@ -114,11 +113,10 @@ class TaskGraphView:
         return exp
 
     def refresh(self, graph: GraphV2) -> None:
-        """Re-project after graph mutations: re-read admitted nodes' edges.
+        """图变更后的重投影：重读已入选节点之间的边。
 
-        Does not grow the view — only refreshes edges between nodes that are
-        already selected (plus edges from selected nodes that gained new
-        endpoints are ignored: growth must go through expand()).
+        不长视图 —— 只刷新已选节点之间的边（已选节点连出的新端点不追：
+        生长必须走 expand()）。
         """
         ids = set(self.selected_nodes)
         fresh: dict[int, Edge] = {}
@@ -130,14 +128,14 @@ class TaskGraphView:
         self.selected_edges = fresh
         self._next_edge_key = key
 
-    # ------------------------------------------------------------- render
+    # ------------------------------------------------------------- 渲染
     def nodes_of_type(self, *types: NodeType) -> list[Node]:
         want = set(types)
         return [n for n in self.selected_nodes.values() if n.type in want]
 
     def dump(self, budget_chars: int = 4000) -> str:
-        """Bounded textual projection — the only shape that may reach a
-        prompt. Whole-graph dumps are impossible by construction."""
+        """有界文本投影 —— 唯一允许进 prompt 的形态。构造上就不可能
+        dump 出整图。"""
         parts: list[str] = [f"# task view {self.task_id}",
                             f"targets: {', '.join(self.target_nodes)}"]
         for n in self.selected_nodes.values():

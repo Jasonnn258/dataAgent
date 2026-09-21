@@ -1,10 +1,9 @@
-"""Policy Gate (Phase 9I): lightweight structured rules with versions.
+"""Policy Gate（Phase 9I）：带版本的轻量结构化规则。
 
-A project-internal adapter — deliberately NOT a wrapper around Semantica's
-PolicyEngine API (spec allows this). Rules are data objects; evaluation is
-deterministic python over an explicit context dict produced by the caller
-(verifier / planner). No rule fires silently: every PolicyResult names the
-rule and version that produced it.
+项目内自研适配 —— 刻意不包 Semantica PolicyEngine API（spec 允许）。
+规则是数据对象；求值是对显式 context dict（由 verifier / planner 组装）
+的确定性 python 计算。没有规则会无声触发：每个 PolicyResult 都写明
+产出它的规则名与版本。
 """
 from __future__ import annotations
 
@@ -15,8 +14,8 @@ from src.semgraph.objects import PolicyAction, PolicyResult, PolicyRule
 
 @dataclass
 class SimpleRule(PolicyRule):
-    """Rule whose trigger is evaluated by a python callable over a context
-    dict. The callable must be pure and side-effect free."""
+    """触发条件由 python callable 在 context dict 上求值的规则。
+    callable 必须纯函数、无副作用。"""
     check_fn: object = None       # (dict) -> (triggered: bool, detail: str)
 
     def evaluate(self, context: dict) -> PolicyResult:
@@ -71,7 +70,7 @@ def _mk(name: str, action: PolicyAction, trigger: str, fn) -> SimpleRule:
         check_fn=fn)
 
 
-# registry — the initial rule set from the spec
+# 规则注册表 —— spec 给出的初始规则集
 POLICY_RULES: dict[str, SimpleRule] = {
     "rollback_keep_same_symbol": _mk(
         "rollback_keep_same_symbol", PolicyAction.HUMAN_REVIEW,
@@ -98,15 +97,15 @@ _ACTION_ORDER = {PolicyAction.PASS: 0, PolicyAction.HUMAN_REVIEW: 1,
 
 
 def evaluate_all(context: dict) -> list[PolicyResult]:
-    """Every triggered rule (untriggered rules stay silent — 'checked and
-    clean' is recorded once by the gate, not per rule)."""
+    """所有被触发的规则（未触发的不出声 —— "查过且干净"由 gate 汇总记
+    一次，不逐规则刷屏）。"""
     return [r for r in (rule.evaluate(context)
                         for rule in POLICY_RULES.values()) if not r.passed]
 
 
 def gate(context: dict) -> PolicyResult:
-    """Most severe triggered action across the whole rule set. The caller
-    (orchestrator) must honor BLOCK — the gate itself never executes."""
+    """全规则集触发的最重动作。调用方（orchestrator）必须服从 BLOCK
+    —— gate 本身绝不执行任何操作。"""
     triggered = evaluate_all(context)
     if not triggered:
         return PolicyResult(

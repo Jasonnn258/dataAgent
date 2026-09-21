@@ -1,19 +1,17 @@
-"""Graph-neighborhood evidence for the semantica mode (Phase 5).
+"""semantica 模式的图邻域证据（Phase 5）。
 
-The structural layer answers "what is here"; the graph layer answers
-"what is *connected* to here" — cross-file aggregation that pure
-per-symbol lookups miss:
+结构层回答"这里有什么"；图层回答"与这里*相连*的是什么" —— 纯符号级
+查询拿不到的跨文件聚合：
 
-- locate: files linked (IMPORTS / CO_CHANGED_WITH) to already-matched files
-  get a boost; symbol-by-name and UIString hits not present in lexical or
-  structural candidates enter the list with graph provenance.
-- impact: PathFinder routes from target symbol to API endpoints become
-  `via` chains on related routes.
-- rollback: coupling between keep-side and rollback-side files becomes
-  explicit evidence (the collateral-damage signal in graph form).
+- locate：与已命中文件相连（IMPORTS / CO_CHANGED_WITH）的文件获得
+  加成；lexical/structural 候选里没有的按名符号与 UIString 命中，
+  带图 provenance 进入列表。
+- impact：PathFinder 从目标符号到 API 端点的路径变成相关路由上的
+  `via` 链。
+- rollback：保留侧与回退侧文件之间的耦合成为显式证据（图形态的
+  附带损伤信号）。
 
-All boosts are additive and modest: graph is the 4th context layer, not a
-replacement for the first three.
+所有加成都是加法式且克制：图是第 4 层上下文，不是前三层的替代品。
 """
 from __future__ import annotations
 
@@ -21,17 +19,17 @@ from pathlib import Path
 
 from src.schema import Evidence, ToolRecorder
 
-# boost weights — deliberately smaller than structural/git layer weights
-GRAPH_IMPORT_BOOST = 1.3     # matched file B imports matched file A
-GRAPH_COOCCUR_BOOST = 1.15   # git co-change neighbour also matched
-GRAPH_SYMBOL_NEW = 8.0       # symbol found by exact name via the graph
-GRAPH_UISTR_BOOST = 1.4      # file contains UI string matching CJK query
+# 加成权重 —— 刻意小于 structural/git 层的权重
+GRAPH_IMPORT_BOOST = 1.3     # 命中文件 B import 命中文件 A
+GRAPH_COOCCUR_BOOST = 1.15   # git 共变邻居也命中
+GRAPH_SYMBOL_NEW = 8.0       # 经图按精确名找到的符号
+GRAPH_UISTR_BOOST = 1.4      # 文件含匹配中文查询的 UI 字符串
 
 _graph_cache: dict[str, "ContextGraph"] = {}
 
 
 def get_context_graph(repo: Path, rec: ToolRecorder | None = None):
-    """Build (or reuse) the ContextGraph for a repo within this process."""
+    """构建（或复用）本进程内某 repo 的 ContextGraph。"""
     from src.semgraph.graph import ContextGraph
     key = str(repo.resolve())
     cg = _graph_cache.get(key)
@@ -45,7 +43,7 @@ def get_context_graph(repo: Path, rec: ToolRecorder | None = None):
     return cg
 
 
-# ---------------------------------------------------------------- locate
+# ---------------------------------------------------------------- locate（定位）
 def enrich_locate_with_graph(repo: Path, cands: list, qt, rec: ToolRecorder) -> list:
     cg = get_context_graph(repo, rec)
     rec.tool("semgraph:query")
@@ -55,7 +53,7 @@ def enrich_locate_with_graph(repo: Path, cands: list, qt, rec: ToolRecorder) -> 
     def graph_evidence(kind: str, detail: str, source: str) -> Evidence:
         return Evidence(kind=kind, source=source, detail=detail, snippet="")
 
-    # 1) neighbourhood boost: files linked to already-matched files
+    # 1) 邻域加成：与已命中文件相连的文件
     for c in cands:
         fid = f"file:{c.file}"
         importers = {e["id"][len("file:"):] for e in cg.neighbors(
@@ -77,8 +75,8 @@ def enrich_locate_with_graph(repo: Path, cands: list, qt, rec: ToolRecorder) -> 
             c.reason += f" +graph({boost:.2f}x)"
             c.score = round(c.score * boost, 3)
 
-    # 2) exact symbol-name lookups through the graph
-    from src.structural.parser import Symbol  # noqa: F401  (type doc only)
+    # 2) 经图做精确符号名查询
+    from src.structural.parser import Symbol  # noqa: F401  （仅类型标注用）
     seen_files = {c.file for c in cands}
     for term, origin in (qt.all_search_terms() if qt else []):
         if len(term) < 4 or not term[0].isalpha():
@@ -98,7 +96,7 @@ def enrich_locate_with_graph(repo: Path, cands: list, qt, rec: ToolRecorder) -> 
                     "graph_symbol", f"graph entity {sym['id']} type={sym['type']} "
                     f"matched query term '{term}' [{origin}]", sym["id"])]))
 
-    # 3) CJK verbatim segments against UIString nodes
+    # 3) 中文逐字片段对 UIString 节点
     for seg in (qt.cjk_segments if qt else []):
         if len(seg) < 2:
             continue
@@ -126,9 +124,9 @@ def enrich_locate_with_graph(repo: Path, cands: list, qt, rec: ToolRecorder) -> 
     return cands
 
 
-# ---------------------------------------------------------------- impact
+# ---------------------------------------------------------------- impact（影响）
 def enrich_impact_with_graph(repo: Path, name: str, result, rec: ToolRecorder) -> None:
-    """Add PathFinder route chains + provenance to an ImpactResult in place."""
+    """就地给 ImpactResult 补 PathFinder 路由链与 provenance。"""
     cg = get_context_graph(repo, rec)
     rec.tool("semgraph:query")
 
@@ -137,14 +135,14 @@ def enrich_impact_with_graph(repo: Path, name: str, result, rec: ToolRecorder) -
         return
     sym_id = f"sym:{target.file}::{target.name}"
     if sym_id not in cg._by_id:
-        # definition may be nested (qualified name with class prefix)
+        # 定义可能嵌套（带类前缀的限定名）
         cands = [e for e in cg.kg.entities
                  if e["id"].startswith("sym:") and e["id"].endswith(f"::{target.name}")]
         if not cands:
             return
         sym_id = cands[0]["id"]
 
-    # provenance: register + read back (audit trail for the analysis)
+    # provenance：注册 + 读回（分析的审计轨迹）
     cg.track(sym_id, f"impact:{target.file}",
              symbol=target.name, task="impact")
     srcs = cg.sources_of(sym_id)
@@ -153,12 +151,12 @@ def enrich_impact_with_graph(repo: Path, name: str, result, rec: ToolRecorder) -
             kind="graph_provenance", source=sym_id,
             detail=f"ProvenanceTracker: {len(srcs)} source(s); first={srcs[0]}"))
 
-    # route chains via PathFinder: route file --...-- symbol
+    # PathFinder 路由链：路由文件 --...-- 符号
     for side in result.related:
         if side.kind != "api_route":
             continue
         route_file = side.file
-        # find a scope entity for that file (any symbol defined in it)
+        # 找该文件的一个 scope 实体（其中定义的任意符号）
         scopes = [e for e in cg.kg.entities
                   if e["id"].startswith("scope:") and e.get("file") == route_file]
         chain = None
@@ -177,9 +175,9 @@ def enrich_impact_with_graph(repo: Path, name: str, result, rec: ToolRecorder) -
                        " -> ".join(chain)))
 
 
-# ---------------------------------------------------------------- rollback
+# ---------------------------------------------------------------- rollback（回退）
 def enrich_rollback_with_graph(repo: Path, result, rec: ToolRecorder) -> None:
-    """Cross-unit coupling evidence: rollback files calling keep-side code."""
+    """跨单元耦合证据：回退侧文件调用保留侧代码。"""
     cg = get_context_graph(repo, rec)
     rec.tool("semgraph:query")
 
@@ -211,7 +209,7 @@ def enrich_rollback_with_graph(repo: Path, result, rec: ToolRecorder) -> None:
                         kind="graph_coupling", source=other,
                         detail=f"rollback file {f} imports keep-side file {other}"))
 
-    # explicit verdict either way — "checked, no coupling" is evidence too
+    # 两种结果都显式给出 —— "查过、无耦合"本身也是证据
     result.evidence.append(Evidence(
         kind="graph_coupling_check", source="semantica:context_graph",
         detail=(f"{couplings} import coupling(s) between rollback-side "

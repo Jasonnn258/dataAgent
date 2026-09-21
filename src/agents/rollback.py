@@ -1,9 +1,9 @@
-"""RollbackPlanner (Phase 9J): unit-level rollback/keep plans, never execution.
+"""RollbackPlanner（Phase 9J）：单元级回退/保留计划，绝不执行。
 
-Produces a RollbackPlan (data), records rollback/keep decisions with the
-units' evidence, and runs the policy gate over the plan's own context.
-It never runs git: no checkout, no revert, no reset — the plan is the
-deliverable, execution belongs to a human after HUMAN_REVIEW/PASS.
+产出 RollbackPlan（数据），带着单元的 evidence 记录 rollback/keep
+decision，并对计划自身的事实跑 policy gate。它从不跑 git：没有
+checkout、没有 revert、没有 reset —— 计划即交付物，执行属于
+HUMAN_REVIEW/PASS 之后的人类。
 """
 from __future__ import annotations
 
@@ -18,12 +18,12 @@ class RollbackPlan:
     task_id: str = ""
     rollback_units: list[dict] = field(default_factory=list)  # {id,label,commit,files}
     keep_units: list[dict] = field(default_factory=list)
-    rollback_symbols: list[str] = field(default_factory=list)  # short names
+    rollback_symbols: list[str] = field(default_factory=list)  # 短名
     keep_symbols: list[str] = field(default_factory=list)
     shared_symbols: list[str] = field(default_factory=list)
     rollback_files: list[str] = field(default_factory=list)
     keep_files: list[str] = field(default_factory=list)
-    couplings: list[str] = field(default_factory=list)         # import edges
+    couplings: list[str] = field(default_factory=list)         # import 边
     affected_routes: list[str] = field(default_factory=list)
     policy_result: object | None = None                        # PolicyResult
     recommendation: str = ""
@@ -87,7 +87,7 @@ class RollbackPlanner:
         plan.shared_symbols = sorted(rb_syms & keep_syms)
         plan.couplings = self.broker.import_couplings(plan.rollback_files,
                                                       plan.keep_files)
-        # policy gate over the plan's own facts (G4: decision layer active)
+        # 对计划自身的事实跑 policy gate（G4：decision 层激活）
         if self.broker.layer_active("decision"):
             gate_ctx = {
                 "rollback_symbols": plan.rollback_symbols,
@@ -124,9 +124,9 @@ class RollbackPlanner:
             plan.recommendation = (
                 "PASS: rollback/keep sets are decoupled — partial rollback "
                 "of the listed units is safe to prepare (execution stays manual)")
-        # decisions: what we propose and why (audit summary, not CoT)
+        # decision：我们提议什么、为什么（审计摘要，不是 CoT）
         if not self.broker.layer_active("decision"):
-            return plan          # no decision memory at this ablation level
+            return plan          # 该消融级没有决策记忆
         for unit, outcome in [(u, "rollback") for u in plan.rollback_units] + \
                             [(u, "keep") for u in plan.keep_units]:
             d = self.broker.record_decision(Decision.make(

@@ -1,14 +1,14 @@
-"""Agent layer v2 (Phase 9J/9K/9L).
+"""Agent 层 v2（Phase 9J/9K/9L）。
 
-Five agents + one orchestrator, nothing else (spec 9J):
-    RepositoryNavigator      fuzzy NL -> feature/target (LLM may help here)
-    ChangeIntelligenceAgent  change history -> ChangeUnits (deterministic)
-    ImpactSliceAgent         bounded task view + blast radius (deterministic)
-    RollbackPlanner          unit-level rollback/keep plan (deterministic)
-    EvidenceVerifier         DeterministicVerifier + SemanticVerifier (9L)
+五个 agent + 一个 orchestrator，再无其他（spec 9J）：
+    RepositoryNavigator      模糊 NL → feature/目标（LLM 只能在这帮忙）
+    ChangeIntelligenceAgent  变更历史 → ChangeUnit（确定性）
+    ImpactSliceAgent         有界 task view + 波及面（确定性）
+    RollbackPlanner          单元级回退/保留计划（确定性）
+    EvidenceVerifier         DeterministicVerifier + SemanticVerifier（9L）
 
-Git is NOT an agent — it is a read-only tool behind the broker (GitAPI
-whitelist). No agent in this package executes git operations.
+Git 不是 agent —— 它是 broker 背后的只读工具（GitAPI 白名单）。本包内
+任何 agent 都不执行 git 操作。
 """
 from src.agents.scopes import ScopedContext
 from src.agents.navigator import RepositoryNavigator, NavigationResult

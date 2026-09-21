@@ -1,21 +1,19 @@
-"""Change + Temporal Graph (Phase 9E).
+"""变更 + 时间图（Phase 9E）。
 
-Reuses git_history/ and change_units/ output as-is (no re-parsing of git,
-no re-implementation of hunk clustering). Writes the change layer into the
-GraphV2 behind a ContextBroker:
+原样复用 git_history/ 与 change_units/ 的产出（不重解析 git、不重实现
+hunk 聚类），把变更层写进 ContextBroker 背后的 GraphV2：
 
-    Commit  -CONTAINS_CHANGE->   ChangeUnit
-    ChangeUnit -INTRODUCED_BY->  Commit          (upward queries)
-    ChangeUnit -MODIFIES->       File / ChangedSymbol / Feature
-    ChangeUnit -CONTAINS_CHANGE-> Hunk            (atomic rollback unit)
-    File     -CHANGED_BY->       Commit          (recency direction)
-    File     -CO_CHANGED_WITH->  File            (support count, from v1)
+    Commit   -CONTAINS_CHANGE->    ChangeUnit
+    ChangeUnit -INTRODUCED_BY->    Commit          （向上的查询方向）
+    ChangeUnit -MODIFIES->         File / ChangedSymbol / Feature
+    ChangeUnit -CONTAINS_CHANGE->  Hunk            （原子回退粒度）
+    File      -CHANGED_BY->        Commit          （时近方向）
+    File      -CO_CHANGED_WITH->   File            （带 support 计数，来自 v1）
 
-Temporal fields live on every change-layer edge (valid_from_commit /
-observed_at). Rollback analysis must consume ChangeUnits here — commit ==
-change unit is never assumed (spec 9E): a commit may split into several
-units, and only the unit-level view can express "roll back the login fix
-but keep the title reword from the same commit".
+每条变更层边都带时间字段（valid_from_commit / observed_at）。回退分析
+必须在这里按 ChangeUnit 消费 —— 绝不假设 commit == change unit
+（spec 9E）：一个 commit 可以拆成多个单元，只有单元级视图才能表达
+"回退登录修复、保留同 commit 里的标题改写"。
 """
 from __future__ import annotations
 
@@ -31,8 +29,8 @@ from src.semgraph.schema_v2 import Edge, EdgeType, Node, NodeType
 
 def build_change_graph(broker, repo: Path | None = None,
                        commits_limit: int = 50) -> dict:
-    """Populate the change layer of a broker's graph. Idempotent: re-running
-    merges into existing nodes/edges. Returns stats."""
+    """填充 broker 图的变更层。幂等：重复运行合并进已有节点/边。
+    返回统计。"""
     repo = repo or broker.repo
     rec = broker.rec
     g = broker.graph
@@ -74,21 +72,21 @@ def build_change_graph(broker, repo: Path | None = None,
             tprops = {"valid_from_commit": sha, "observed_at": commit.date}
             g.add_edge(Edge(cid, uid, EdgeType.CONTAINS_CHANGE, props=tprops))
             g.add_edge(Edge(uid, cid, EdgeType.INTRODUCED_BY, props=tprops))
-            # unit -> files it modifies
+            # 单元 -> 它修改的文件
             for f in unit.files:
                 fid = f"file:{f}"
                 if g.node(fid) is None:
                     g.add_node(Node(fid, NodeType.FILE, props={"path": f}))
                 g.add_edge(Edge(uid, fid, EdgeType.MODIFIES, props=tprops))
-            # unit -> features whose surfaces it touches (best effort: only
-            # if the semantic layer seeded features IMPLEMENTS-ing the file)
+            # 单元 -> 它触到表面的 feature（尽力而为：仅当语义层已给
+            # 该文件种了 IMPLEMENTS 方向的 feature）
             for fid in {f"file:{f}" for f in unit.files}:
                 for feat in g.neighbors(fid, rel_types={EdgeType.IMPLEMENTS},
                                         direction="in"):
                     if feat.type == NodeType.FEATURE:
                         g.add_edge(Edge(uid, feat.id, EdgeType.MODIFIES,
                                         props=tprops))
-            # unit -> ChangedSymbol nodes
+            # 单元 -> ChangedSymbol 节点
             for sym in unit.symbols:
                 sid = f"csym:{sha[:10]}:{sym}"
                 if g.node(sid) is None:
@@ -96,12 +94,12 @@ def build_change_graph(broker, repo: Path | None = None,
                         "symbol": sym, "commit": sha, "unit": unit.unit_id}))
                     n_symbols += 1
                 g.add_edge(Edge(uid, sid, EdgeType.MODIFIES, props=tprops))
-                # link to the definition if it exists in the code layer
-                # (unit symbols are qualified file::name, same as sym: ids)
+                # 存在代码层定义时连过去（unit 符号是 file::name 限定式，
+                # 与 sym: id 同构）
                 if "::" in sym and g.node(f"sym:{sym}"):
                     g.add_edge(Edge(sid, f"sym:{sym}", EdgeType.REPRESENTS,
                                     props=tprops))
-            # hunk-level nodes (atomic rollback granularity)
+            # hunk 级节点（原子回退粒度）
             for href in unit.hunks:
                 hid = f"hunk:{unit.unit_id}:{href.file}:{href.hunk_idx}"
                 if g.node(hid) is None:
@@ -112,8 +110,8 @@ def build_change_graph(broker, repo: Path | None = None,
                     g.add_edge(Edge(uid, hid, EdgeType.CONTAINS_CHANGE,
                                     props=tprops))
 
-        # file -> commit recency edge (v1 only wrote commit -> file MODIFIES;
-        # CHANGED_BY is the direction temporal queries start from)
+        # file -> commit 的时近边（v1 只写了 commit -> file 的 MODIFIES；
+        # CHANGED_BY 才是时间查询起步的方向）
         for f in commit.files:
             fid = f"file:{f}"
             if g.node(fid) is not None and not g.edge_between(fid, cid, EdgeType.CHANGED_BY):
@@ -121,7 +119,7 @@ def build_change_graph(broker, repo: Path | None = None,
                                 props={"valid_from_commit": sha,
                                        "observed_at": commit.date}))
 
-    # co-change support edges (file level, aggregated over history)
+    # 共变支持边（文件级，跨历史聚合）
     for (a, b), n in api.co_change_pairs(max_count=commits_limit).items():
         fa, fb = f"file:{a}", f"file:{b}"
         if g.node(fa) and g.node(fb) and not g.edge_between(fa, fb, EdgeType.CO_CHANGED_WITH):

@@ -1,19 +1,19 @@
-"""Semantic Feature Layer (Phase 9D): Feature/Capability/Concept nodes.
+"""语义特征层（Phase 9D）：Feature/Capability/Concept 节点。
 
-Two ways features come into existence (spec 9D):
+Feature 有两条产生路径（spec 9D）：
 
-A. deterministic seeds — rules over route/component/config/UIString nodes.
-   These are FACTS: written into the graph with IMPLEMENTS edges and
-   SEMANTIC_MAPPING evidence recording the seeding rule.
+A. 确定性种子 —— 基于 route/component/config/UIString 节点的规则。
+   这些是事实：连同 IMPLEMENTS 边和记录种子规则的 SEMANTIC_MAPPING
+   evidence 一并写入图。
 
-B. optional LLM semantic mapping — natural-language query -> feature/
-   concept candidates. The LLM may ONLY pick/map names; it can never mint
-   deterministic relations (CALLS/IMPORTS/...). Unevidenced mappings stay
-   `status="candidate"` and are NOT written into the graph as facts.
+B. 可选的 LLM 语义映射 —— 自然语言 query → feature/concept 候选。
+   LLM 只能选择/映射已有名字，永远不能铸造确定性关系（CALLS/
+   IMPORTS/...）。无证据映射保持 `status="candidate"`，绝不作为事实
+   写入图。
 
-This layer exists to answer fuzzy questions like "系统标题在哪" with a
-feature handle (SystemBranding) that then resolves deterministically to
-files/symbols — LLM understands, tools prove.
+这一层负责回答"系统标题在哪"这类模糊问题：先给出 feature 句柄
+（SystemBranding），再由确定性工具解析到文件/符号 —— LLM 负责理解，
+工具负责证明。
 """
 from __future__ import annotations
 
@@ -51,15 +51,15 @@ def _camel(*parts: str) -> str:
 
 
 class SemanticMapper:
-    """Builds and queries the semantic layer of a GraphV2."""
+    """构建并查询 GraphV2 的语义层。"""
 
     def __init__(self, graph: GraphV2, rec: ToolRecorder | None = None):
         self.g = graph
         self.rec = rec or ToolRecorder()
 
-    # ------------------------------------------------------------ seeds (A)
+    # ------------------------------------------------------------ 种子（A）
     def seed_deterministic(self) -> list[Node]:
-        """Rule-based Feature nodes. Facts, written with provenance."""
+        """规则生成的 Feature 节点。是事实，带 provenance 写入。"""
         created: list[Node] = []
         for api in self.g.nodes_of_type(NodeType.API_ENDPOINT):
             route = api.props.get("route", "")
@@ -78,7 +78,7 @@ class SemanticMapper:
                 f"feature:{name}", name, implements=comp.id,
                 rule=f"seed:component {comp.props.get('file', '')}",
                 kind="Feature")
-        # root layout of a Next.js app *is* the system branding surface
+        # Next.js 应用的根 layout 本身就是系统品牌面
         for f in self.g.nodes_of_type(NodeType.FILE):
             if f.id.endswith("app/layout.tsx"):
                 created += self._seed_feature(
@@ -104,12 +104,11 @@ class SemanticMapper:
         node.props["evidence_id"] = ev.id
         return [node]
 
-    # ------------------------------------------------------------ query
+    # ------------------------------------------------------------ 查询
     def map_query(self, query: str, llm=None,
                   max_candidates: int = 5) -> list[SemanticTargetCandidate]:
-        """Query -> feature candidates. Deterministic lexical match first;
-        optional LLM refinement second. Candidates without evidence never
-        enter the graph."""
+        """query → feature 候选。先做确定性词面匹配，再可选 LLM 精化。
+        无证据的候选绝不进图。"""
         qt = extract_terms(query)
         terms = {t.lower() for t, _ in qt.all_search_terms()} | \
                 {s for s in qt.cjk_segments} | {s for s in qt.cjk_subterms}
@@ -117,7 +116,7 @@ class SemanticMapper:
 
         for feat in self.g.nodes_of_type(NodeType.FEATURE):
             name = feat.props.get("name", "")
-            if not name:  # unnamed features (test/legacy artifacts) never match
+            if not name:  # 无名 feature（测试/遗留产物）永不匹配
                 continue
             name_l = name.lower()
             hit = 0.0
@@ -126,7 +125,7 @@ class SemanticMapper:
                     continue
                 if t in name_l or name_l in t:
                     hit = max(hit, 3.0)
-                # subtoken match: UserLogin vs query "login"
+                # 子词匹配：UserLogin 对 query "login"
                 elif t in re.findall(r"[a-z]+|[A-Z][a-z]*", name_l.lower()):
                     hit = max(hit, 2.0)
             if hit <= 0:
@@ -142,7 +141,7 @@ class SemanticMapper:
             cand.evidence.append(ev)
             scored.append(cand)
 
-        # curated zh aliases for the seeded naming scheme — data, not logic
+        # 种子命名方案配套的人工整理中文别名 —— 是数据不是逻辑
         alias = _zh_alias(query)
         for feat in self.g.nodes_of_type(NodeType.FEATURE):
             for a_name, a_terms in alias:
@@ -165,8 +164,8 @@ class SemanticMapper:
         return scored[:max_candidates]
 
     def _llm_map(self, query: str, llm) -> list[SemanticTargetCandidate]:
-        """LLM picks from EXISTING feature names only; output stays
-        candidate-grade evidence (mapping_method='llm'), never a fact."""
+        """LLM 只能从已有 feature 名里挑；输出停留在 candidate 级证据
+        （mapping_method='llm'），永远不是事实。"""
         feats = [{"feature_id": f.id, "name": f.props.get("name", ""),
                   "seeded_by": f.props.get("seeded_by", "")}
                  for f in self.g.nodes_of_type(NodeType.FEATURE)][:40]
@@ -180,8 +179,8 @@ class SemanticMapper:
                        "Pick only from the given features. Never invent "
                        "call/import relations.",
                 user=f"Features: {feats}\nQuery: {query}")
-        except Exception as e:  # LLM problems surface as candidate absence,
-            # not as a crash of the deterministic path
+        except Exception as e:  # LLM 出问题时表现为"没有候选"，
+            # 绝不让确定性路径跟着崩
             self.rec.warn(f"semantic mapper: llm mapping skipped ({e})")
             return []
         cands = []
@@ -189,7 +188,7 @@ class SemanticMapper:
         for c in (out or {}).get("candidates", [])[:3]:
             fid = c.get("feature_id")
             if fid not in by_id:
-                continue  # hallucinated ids are dropped, not trusted
+                continue  # 幻觉 id 直接丢弃，不信任
             cand = SemanticTargetCandidate(
                 feature_id=fid, name=by_id[fid]["name"], mapping_method="llm",
                 status="candidate", score=1.5)
@@ -209,7 +208,7 @@ class SemanticMapper:
         return out
 
 
-# curated zh aliases — extensible data table, not hard-coded branching
+# 人工整理的中文别名 —— 可扩展的数据表，不是硬编码分支
 ZH_FEATURE_ALIASES: list[tuple[str, list[str]]] = [
     ("SystemBranding", ["标题", "系统标题", "网站名", "品牌", "title", "branding"]),
     ("AuthLogin", ["登录", "登陆", "登录验证", "账号", "auth", "login"]),

@@ -1,9 +1,8 @@
-"""ImpactSliceAgent (Phase 9J): bounded blast radius around targets.
+"""ImpactSliceAgent（Phase 9J）：围绕目标的有界波及面。
 
-Builds the task view (select + audited expand), gathers callers/callees/
-importers/routes deterministically from the broker, and registers an
-impact Finding whose evidence is the AST evidence minted by the context
-read — not the agent's opinion.
+构建 task view（select + 带审计的 expand），从 broker 确定性收集
+caller/callee/importer/route，并注册一条 impact Finding —— 它的证据是
+上下文读取时铸造的 AST evidence，不是 agent 的意见。
 """
 from __future__ import annotations
 
@@ -18,10 +17,10 @@ from src.semgraph.task_view import TaskGraphView
 class ImpactSlice:
     target_ids: list[str] = field(default_factory=list)
     route_ids: list[str] = field(default_factory=list)
-    routes: list[str] = field(default_factory=list)      # route paths
+    routes: list[str] = field(default_factory=list)      # 路由路径
     caller_ids: list[str] = field(default_factory=list)
     files: list[str] = field(default_factory=list)
-    symbols: list[str] = field(default_factory=list)     # short names
+    symbols: list[str] = field(default_factory=list)     # 短名
     view: TaskGraphView | None = None
     finding_id: str = ""
     evidence_ids: list[str] = field(default_factory=list)
@@ -63,8 +62,8 @@ class ImpactSliceAgent:
             if name and name not in slice_.symbols:
                 slice_.symbols.append(name)
         slice_.caller_ids = sorted(set(callers))
-        # audited growth: the caller/import closure enters the view only
-        # now, with a trigger naming this agent
+        # 带审计的生长：caller/import 闭包到这一步才进视图，trigger 写明
+        # 是本 agent 发起的
         if slice_.caller_ids and view is not None:
             self.broker.expand_task_view(
                 task_id, slice_.caller_ids,

@@ -1,21 +1,21 @@
-"""Phase 10: G0-G4 graph-layer ablation.
+"""Phase 10：G0-G4 图层消融。
 
-One scenario (the acceptance demo: "登录改坏了，回退但保留同 commit 的系统标题")
-run with graph layers switched on progressively:
+同一场景（验收演示："登录改坏了，回退但保留同 commit 的系统标题"），
+逐级开图层跑：
 
     G0  code              G1  +semantic          G2  +change
     G3  +taskview         G4  +evidence/decision/policy
 
-Metrics per level: navigation ok, problem/keep unit hit, policy gated,
-verification pass rate, evidence coverage, task_graph_nodes, report size,
-tool calls, llm calls. Answers:
+每级指标：导航是否成功、问题/保留单元命中、是否过 policy gate、
+验证通过数、证据覆盖、task_graph_nodes、报告大小、工具调用数。
+回答四个问题：
 
-    Q1  is the semantic layer needed to even enter via fuzzy NL? (G0->G1)
-    Q2  is the change layer needed for unit-level rollback?       (G1->G2)
-    Q3  does the task view bound the context?                     (G2->G3)
-    Q4  do evidence/decision/policy make it verifiable?           (G3->G4)
+    Q1  语义层是不是模糊自然语言入口的必要条件？（G0->G1）
+    Q2  变更层是不是单元级回退的必要条件？      （G1->G2）
+    Q3  task view 是否把上下文钉在有界范围？     （G2->G3）
+    Q4  evidence/decision/policy 是否让结论可验证？（G3->G4）
 
-Usage: python experiments/g_ablation.py
+用法：python experiments/g_ablation.py
 """
 from __future__ import annotations
 
