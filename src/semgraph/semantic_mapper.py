@@ -165,30 +165,35 @@ class SemanticMapper:
 
     def _llm_map(self, query: str, llm) -> list[SemanticTargetCandidate]:
         """LLM 只能从已有 feature 名里挑；输出停留在 candidate 级证据
-        （mapping_method='llm'），永远不是事实。"""
+        （mapping_method='llm'），永远不是事实。
+
+        Phase 11H：prompt 与不变量过滤迁入 SemanticReasoningAdapter，
+        本方法只负责把候选包装成 SemanticTargetCandidate + 铸
+        candidate 级证据；LLM 调用单独成层（EventLayer.LLM）。
+        """
+        from src.llm.semantic_adapter import SemanticReasoningAdapter
         feats = [{"feature_id": f.id, "name": f.props.get("name", ""),
                   "seeded_by": f.props.get("seeded_by", "")}
                  for f in self.g.nodes_of_type(NodeType.FEATURE)][:40]
         if not feats:
             return []
+        adapter = SemanticReasoningAdapter(llm)
+        span = getattr(self.rec, "span", None)
         try:
-            out = llm.chat_json(
-                system="You map natural-language maintenance queries to "
-                       "software features. Reply ONLY with JSON: "
-                       '{"candidates": [{"feature_id": "...", "reason": "..."}]}. '
-                       "Pick only from the given features. Never invent "
-                       "call/import relations.",
-                user=f"Features: {feats}\nQuery: {query}")
+            if span is None:
+                self.rec.tool("llm:semantic_mapping")
+                picks = adapter.map_features(feats, query)
+            else:
+                with span("llm", "semantic_mapping", "map"):
+                    picks = adapter.map_features(feats, query)
         except Exception as e:  # LLM 出问题时表现为"没有候选"，
             # 绝不让确定性路径跟着崩
             self.rec.warn(f"semantic mapper: llm mapping skipped ({e})")
             return []
         cands = []
         by_id = {f["feature_id"]: f for f in feats}
-        for c in (out or {}).get("candidates", [])[:3]:
-            fid = c.get("feature_id")
-            if fid not in by_id:
-                continue  # 幻觉 id 直接丢弃，不信任
+        for c in picks:
+            fid = c["feature_id"]
             cand = SemanticTargetCandidate(
                 feature_id=fid, name=by_id[fid]["name"], mapping_method="llm",
                 status="candidate", score=1.5)
