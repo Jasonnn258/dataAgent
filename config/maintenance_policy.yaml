@@ -1,0 +1,31 @@
+# 维护策略参数（Phase 11I）—— 策略旋钮，不是算法。
+#
+# 这些数字决定"系统倾向怎么判"，而不是"怎么算"：挪到这里之后，
+# Policy A vs Policy B 消融只改本文件 + version，不动代码。
+#
+# 加载：src/config.py::maintenance_policy()（PyYAML 缺席时用内置
+# 极简解析器，格式保持本文件这种两层层级 + 标量）。缺键一律回退
+# DEFAULT_MAINTENANCE_POLICY，保证任何环境下行为可复现。
+#
+# 消融钩子：set_maintenance_policy(cfg) 进程内覆盖（见 11J eval）；
+# scoring 权重在 skill import 时固化，A/B 消融需 reload 模块。
+
+version: "11I.1"
+
+rollback:
+  scoring:
+    label: 3.0          # 命中变更单元主标签（最强信号）
+    ui: 2.0             # UI 文案/字符串面命中
+    symbol: 2.0         # 符号名命中
+    file: 1.0           # 文件路径面命中
+    label_partial: 0.7  # label 子串/部分命中折扣
+  tie_break:
+    # 平局归问题侧：嫌疑犯 stays 嫌疑犯（宁可多回退交人工复核）。
+    # 设为 false 则平局归 keep 侧（宁可不回退）。
+    prefer_problem_side: true
+
+policy:
+  action_risk:
+    PASS: low
+    HUMAN_REVIEW: medium
+    BLOCK: high

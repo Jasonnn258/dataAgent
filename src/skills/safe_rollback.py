@@ -21,18 +21,31 @@ def _short(qualified: str) -> str:
     return qualified.rsplit("::", 1)[-1]
 
 
+def _tie_prefer_problem_side() -> bool:
+    """平局策略（11I 外置）：true = 嫌疑犯 stays 嫌疑犯。每次现读，
+    支持 A/B 消融。"""
+    from src.config import maintenance_policy
+    return bool(maintenance_policy()["rollback"]["tie_break"]
+                ["prefer_problem_side"])
+
+
 def arbitrate(problem_matches: list[dict], keep_matches: list[dict]):
     """keep/problem 仲裁（纯数据运算，无 broker 访问）。
 
-    同时命中两套词表的单元归打分更高者，平局归问题侧（嫌疑犯 stays
-    嫌疑犯）；keep 命中把问题搜索钉在用户点名的 commit 上。skill 与
-    orchestrator（经 RollbackPlanner.arbitrate）共用这一份逻辑。
+    同时命中两套词表的单元归打分更高者；平局去向由策略配置
+    rollback.tie_break.prefer_problem_side 决定（默认问题侧：嫌疑犯
+    stays 嫌疑犯）。keep 命中把问题搜索钉在用户点名的 commit 上。
+    skill 与 orchestrator（经 RollbackPlanner.arbitrate）共用这一份
+    逻辑。
     """
+    prefer_problem = _tie_prefer_problem_side()
     score_p = {m["unit_id"]: m for m in problem_matches}
     score_k = {m["unit_id"]: m for m in keep_matches}
     keep_units = [m for uid, m in score_k.items()
                   if uid not in score_p
-                  or score_k[uid]["score"] > score_p[uid]["score"]]
+                  or (score_k[uid]["score"] > score_p[uid]["score"]
+                      if prefer_problem
+                      else score_k[uid]["score"] >= score_p[uid]["score"])]
     keep_ids = {m["unit_id"] for m in keep_units}
     # 只有真实的 commit 才构成钉住；空 commit（如按 unit id 直传的计划
     # 路径）不限制问题侧
@@ -151,17 +164,21 @@ class SafeRollbackSkill(BaseSkill):
         # ---- 5. 决策记录（审计摘要，不是 CoT）----
         decision_ids: list[str] = []
         if broker.layer_active("decision"):
+            from src.config import maintenance_policy, policy_version
+            # 单元级风险随裁决档位走（11I：action→risk 外置，缺档回退 medium）
+            action_risk = maintenance_policy()["policy"]["action_risk"]
             for unit, outcome in [(u, "rollback") for u in rollback_units] + \
                                 [(u, "keep") for u in keep_units_b]:
                 d = broker.record_decision(Decision.make(
                     outcome, f"{outcome} unit {unit['id']} [{unit['label']}] "
                              f"from {unit['commit'][:8]}",
                     task_id=task_id, target=",".join(unit["files"][:3]),
-                    risk={"BLOCK": "high"}.get(action, "medium"),
+                    risk=action_risk.get(action, "medium"),
                     decision_maker=actor, evidence_ids=ev_ids,
                     reason_summary=f"policy={action}; "
                                    f"shared={shared_symbols or 'none'}; "
-                                   f"couplings={len(couplings)}"))
+                                   f"couplings={len(couplings)}",
+                    policy_version=policy_version()))
                 decision_ids.append(d.id)
 
         out.data = {

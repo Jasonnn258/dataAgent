@@ -81,6 +81,7 @@ class Decision:
     decision_maker: str = ""          # agent 或 "human:<name>"
     reason_summary: str = ""          # 面向审计，绝不是模型私有 CoT
     policy: str = ""                  # 门控时记 "rule v_version -> ACTION"
+    policy_version: str = ""          # 生效的 maintenance_policy 版本（11I）
     timestamp: str = field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%S%z"))
 
     @classmethod

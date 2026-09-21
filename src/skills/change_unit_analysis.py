@@ -4,20 +4,27 @@
 符号/文件四路确定性打分 + 时近排序，每次匹配铸造 evidence、注册
 finding。输出恒为单元级 —— 绝不假设 commit == change unit。
 
-打分权重 W_* 目前与原 agent 一致硬编码；Phase 11I 移入
-config/maintenance_policy.yaml。
+打分权重 W_* 自 Phase 11I 起来自 config/maintenance_policy.yaml
+（默认值与原硬编码一致）。
 """
 from __future__ import annotations
 
+from src.config import maintenance_policy
 from src.skills.base import BaseSkill
 from src.skills.registry import register
 from src.skills.spec import (SKILL_PARTIAL, SKILL_SUCCESS, SkillResult,
                              SkillSpec)
 from src.semgraph.objects import Evidence, EvidenceType, Finding
 
-# 确定性权重：label 是最强信号，UI 文案次之（11I 外置到 policy config）
-W_LABEL, W_UI, W_SYMBOL, W_FILE = 3.0, 2.0, 2.0, 1.0
-LABEL_PARTIAL = 0.7                    # label 子串命中折扣
+# 确定性权重（11I 外置到 config/maintenance_policy.yaml）。
+# import 时固化成模块常量：数值默认与 11I 前硬编码一致；做权重
+# A/B 消融时改配置后 reload 本模块。
+_SCORING = maintenance_policy()["rollback"]["scoring"]
+W_LABEL = float(_SCORING["label"])     # label 是最强信号
+W_UI = float(_SCORING["ui"])
+W_SYMBOL = float(_SCORING["symbol"])
+W_FILE = float(_SCORING["file"])
+LABEL_PARTIAL = float(_SCORING["label_partial"])   # 子串命中折扣
 
 
 class ChangeUnitAnalysisSkill(BaseSkill):

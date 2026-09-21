@@ -29,14 +29,16 @@ class PolicyService:
             return self._gate(context, task_id)
 
     def _gate(self, context: dict, task_id: str) -> PolicyResult:
+        from src.config import maintenance_policy, policy_version
         from src.semgraph.policy import gate
         result = gate(context)
-        risk = {"PASS": "low", "HUMAN_REVIEW": "medium",
-                "BLOCK": "high"}[result.action.value]
+        # action → risk 是策略映射（11I 外置），不是代码常量
+        risk = maintenance_policy()["policy"]["action_risk"][result.action.value]
         self.broker.record_decision(Decision.make(
             "policy_gate", result.action.value, task_id=task_id, risk=risk,
             decision_maker="PolicyGate",
             reason_summary=result.detail[:200],
             policy=(f"{result.rule.name} v{result.rule.version} -> "
-                    f"{result.action.value}") if result.rule else "none-triggered"))
+                    f"{result.action.value}") if result.rule else "none-triggered",
+            policy_version=policy_version()))
         return result
