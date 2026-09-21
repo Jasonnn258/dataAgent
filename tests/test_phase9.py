@@ -78,12 +78,16 @@ class TestSchemaV2:
         from src.semgraph.enrich import get_context_graph
         from src.semgraph.schema_v2 import (Edge, EdgeType, GraphV2, Node,
                                              NodeType)
-        cg = get_context_graph(FIXTURE, ToolRecorder())
-        g2 = GraphV2.from_v1(cg)
-        g2.add_node(Node("feature:t9", NodeType.FEATURE, props={}))
-        g2.add_edge(Edge("feature:t9", "file:src/lib/retry.ts", EdgeType.IMPLEMENTS))
-        g2.sync_back_to_v1(cg)
-        assert cg.path("file:src/lib/retry.ts", "feature:t9")
+        try:
+            cg = get_context_graph(FIXTURE, ToolRecorder())
+            g2 = GraphV2.from_v1(cg)
+            g2.add_node(Node("feature:t9", NodeType.FEATURE, props={}))
+            g2.add_edge(Edge("feature:t9", "file:src/lib/retry.ts", EdgeType.IMPLEMENTS))
+            g2.sync_back_to_v1(cg)
+            assert cg.path("file:src/lib/retry.ts", "feature:t9")
+        finally:
+            # the v1 graph cache is process-shared; never leak test nodes
+            se._graph_cache.clear()
 
     def test_edge_requires_known_nodes(self, v2):
         from src.semgraph.schema_v2 import Edge, EdgeType
@@ -284,3 +288,74 @@ class TestPolicyGate:
         from src.semgraph.policy import POLICY_RULES
         for name, rule in POLICY_RULES.items():
             assert rule.version and rule.name == name and rule.description
+
+
+# ================================================================ 9D semantic
+@pytest.fixture(scope="module")
+def mapper(seeded):
+    from src.semgraph.context_broker import ContextBroker
+    from src.semgraph.semantic_mapper import SemanticMapper
+    b = ContextBroker(FIXTURE, ToolRecorder())
+    m = SemanticMapper(b.graph, b.rec)
+    m.seed_deterministic()
+    return m
+
+
+class TestSemanticMapper:
+    def test_routes_and_components_seed_features(self, mapper):
+        names = {n.props.get("name") for n in
+                 mapper.g.nodes_of_type(__import__("src.semgraph.schema_v2",
+                                                   fromlist=["NodeType"]).NodeType.FEATURE)}
+        assert "AuthLogin" in names and "AuthNav" in names
+
+    def test_root_layout_seeds_system_branding(self, mapper):
+        f = mapper.g.node("feature:SystemBranding")
+        assert f is not None and f.props["status"] == "seeded"
+        # IMPLEMENTS edge points at the layout file
+        dsts = [e.dst for e in mapper.g.edges_from("feature:SystemBranding")]
+        assert "file:src/app/layout.tsx" in dsts
+
+    def test_seeded_features_carry_evidence(self, mapper):
+        f = mapper.g.node("feature:SystemBranding")
+        assert "evidence_id" in f.props
+
+    def test_zh_query_maps_to_feature(self, mapper):
+        cands = mapper.map_query("系统标题在哪里修改")
+        assert cands[0].feature_id == "feature:SystemBranding"
+        assert cands[0].related_symbols == ["file:src/app/layout.tsx"]
+        assert cands[0].evidence, "candidates must carry their evidence"
+
+    def test_login_query_maps_to_auth_feature(self, mapper):
+        cands = mapper.map_query("登录验证的逻辑在哪里")
+        assert cands[0].feature_id == "feature:AuthLogin"
+
+    def test_symbol_query_still_resolves(self, mapper):
+        cands = mapper.map_query("generateWithRetry")
+        assert cands and cands[0].feature_id == "feature:Generate"
+
+    def test_llm_absent_stays_deterministic(self, mapper):
+        # no llm configured: mapper works, returns only lexical/alias hits
+        cands = mapper.map_query("登录验证的逻辑在哪里", llm=None)
+        assert all(c.mapping_method in ("lexical", "seed-alias") for c in cands)
+
+    def test_llm_candidates_dropped_if_hallucinated(self, mapper):
+        class FakeLLM:
+            available = True
+            def chat_json(self, system, user):
+                return {"candidates": [{"feature_id": "feature:Ghost", "reason": "x"}]}
+        cands = mapper.map_query("任意查询", llm=FakeLLM())
+        assert not any(c.feature_id == "feature:Ghost" for c in cands)
+
+    def test_llm_valid_pick_is_candidate(self, mapper):
+        class FakeLLM:
+            available = True
+            def chat_json(self, system, user):
+                return {"candidates": [{"feature_id": "feature:AuthLogin",
+                                        "reason": "query mentions login"}]}
+        cands = mapper.map_query("怎么改账号校验", llm=FakeLLM())
+        hit = [c for c in cands if c.feature_id == "feature:AuthLogin"
+               and c.mapping_method == "llm"]
+        assert hit and hit[0].status == "candidate"  # never auto-fact
+        # and it was NOT promoted into the graph as an unevidenced fact
+        node = mapper.g.node("feature:AuthLogin")
+        assert node.props.get("status") == "seeded"
