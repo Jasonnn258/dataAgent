@@ -284,8 +284,10 @@ class ContextBroker:
             if other.id == finding.id or other.id in finding.contradicts:
                 continue
             okey = _topic_symbols(other.statement)
-            # same subject symbols, disagreeing predicate => conflict
-            shared = fkey & okey
+            # same subject symbols, disagreeing predicate => conflict.
+            # Shared boilerplate alone (labels like 'auth', words like
+            # 'candidate') is not a dispute — require a specific identifier.
+            shared = {s for s in fkey & okey if _is_specific(s)}
             if shared and fkey != okey:
                 topic = " ".join(sorted(shared))
                 c = Conflict(finding_a=other.id, finding_b=finding.id,
@@ -448,6 +450,42 @@ class ContextBroker:
         return result
 
     # ------------------------------------------------------------ util
+    def node(self, node_id: str) -> Node | None:
+        return self.graph.node(node_id)
+
+    def find_change_units(self, label: str = "", file: str = "",
+                          commit: str = "") -> list[Node]:
+        """ChangeUnit lookup for the change-intelligence agent (file is a
+        substring match over unit files)."""
+        out = []
+        for cu in self.graph.nodes_of_type(NodeType.CHANGE_UNIT):
+            p = cu.props
+            if label and p.get("semantic_label", "") != label:
+                continue
+            if commit and p.get("commit", "") != commit:
+                continue
+            if file and not any(file in f for f in p.get("files", [])):
+                continue
+            out.append(cu)
+        return out
+
+    def import_couplings(self, files_a: list[str],
+                         files_b: list[str]) -> list[str]:
+        """Direct IMPORTS edges between two file sets, both directions —
+        the collateral-damage signal for rollback planning."""
+        a = {f"file:{f}" for f in files_a}
+        b = {f"file:{f}" for f in files_b}
+        out = []
+        for fa in a:
+            for e in self.graph.edges_from(fa):
+                if e.type == EdgeType.IMPORTS and e.dst in b and e.dst != fa:
+                    out.append(f"{fa[len('file:'):]} imports {e.dst[len('file:'):]}")
+        for fb in b:
+            for e in self.graph.edges_from(fb):
+                if e.type == EdgeType.IMPORTS and e.dst in a and e.dst != fb:
+                    out.append(f"{fb[len('file:'):]} imports {e.dst[len('file:'):]}")
+        return sorted(set(out))
+
     def path(self, a: str, b: str) -> list[str] | None:
         """Multi-hop relation path via the v1 PathFinder (kept in sync)."""
         self.graph.sync_back_to_v1(self._v1)
@@ -465,10 +503,25 @@ class ContextBroker:
 def _topic_symbols(statement: str) -> frozenset[str]:
     """Symbols a finding is ABOUT (subject set). Two findings conflict when
     their subject sets intersect but are not equal — e.g. 'X affects A' vs
-    'X only affects B'. Verb/stop words are excluded."""
+    'X only affects B'. Verb/stop words and sha-like hex tokens are
+    excluded (a shared commit hash is context, not a subject)."""
     import re
     stop = {"affects", "affect", "impacts", "impact", "only", "the", "and",
             "in", "on", "to", "of", "is", "are", "was", "route", "routes",
-            "api", "via", "not"}
+            "api", "via", "not", "unit", "units", "label", "feature",
+            "query", "commit", "change", "matches", "description",
+            "targets", "files", "symbols", "seed", "alias", "candidate",
+            "modifying", "callers", "caller", "same", "exact", "claim",
+            "here", "bare", "without", "evidence"}
     syms = re.findall(r"[A-Za-z_][A-Za-z0-9_]{2,}", statement)
-    return frozenset(s for s in syms if s not in stop)
+    return frozenset(s for s in syms
+                     if s not in stop and not re.fullmatch(r"[0-9a-f]{6,}", s))
+
+
+def _is_specific(token: str) -> bool:
+    """Identifier-like: camelCase/snake_case/digit/CJK. Plain lowercase
+    English words ('auth', 'navbar', 'candidate') are vocabulary, not
+    subjects — a single shared word like that does not allege a dispute."""
+    return (any(c.isupper() for c in token) or "_" in token
+            or any(c.isdigit() for c in token)
+            or any(ord(c) > 0x2E80 for c in token))

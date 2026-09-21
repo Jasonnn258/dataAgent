@@ -522,6 +522,98 @@ class TestChangeGraph:
         assert in_edges, "ChangeUnit MODIFIES Feature must exist after seeding"
 
 
+# ================================================================ 9J/9K/9L agents
+@pytest.fixture(scope="module")
+def orch(seeded):
+    from src.agents import Orchestrator
+    from src.semgraph.change_graph import build_change_graph
+    from src.semgraph.context_broker import ContextBroker
+    b = ContextBroker(FIXTURE, ToolRecorder())
+    build_change_graph(b)
+    return Orchestrator(b), b
+
+
+DEMO_QUERY = "登录逻辑改坏了，帮我找出问题修改，准备回退"
+DEMO_KEEP = "保留同 commit 中已经改好的系统标题"
+
+
+class TestAgentOrchestrator:
+    def test_demo_end_to_end(self, orch):
+        """验收演示: same commit, two units — rollback auth, keep title."""
+        o, _ = orch
+        r = o.run(DEMO_QUERY, keep_hint=DEMO_KEEP)
+        assert [u.unit_id.split(":")[-1] for u in r.problem_units] == ["bbdc659f-U2"]
+        assert [u.unit_id.split(":")[-1] for u in r.keep_units] == ["bbdc659f-U1"]
+        # commit == change unit is never assumed: one commit, two units
+        assert r.problem_units[0].commit == r.keep_units[0].commit
+        assert r.problem_units[0].unit_id != r.keep_units[0].unit_id
+        assert r.slice.routes == ["/api/auth/login"]
+        assert r.plan.policy_result.action.value == "HUMAN_REVIEW"
+        assert r.plan.shared_symbols == []
+        assert "HUMAN_REVIEW" in r.plan.recommendation
+
+    def test_agent_layer_never_calls_git(self, orch):
+        o, b = orch
+        n_before = len(b.rec.calls)
+        o.run(DEMO_QUERY, keep_hint=DEMO_KEEP)
+        new = b.rec.calls[n_before:]
+        assert new, "orchestrator must leave a tool-call trail"
+        assert not any(c.startswith("git:") for c in new), \
+            "agents go through the broker; the agent layer itself runs no git"
+
+    def test_scoped_contexts_per_role(self, orch):
+        from src.agents.scopes import ScopedContext
+        o, _ = orch
+        r = o.run(DEMO_QUERY, keep_hint=DEMO_KEEP)
+        assert set(r.scopes) == {"RepositoryNavigator", "ChangeIntelligenceAgent",
+                                 "ImpactSliceAgent", "RollbackPlanner",
+                                 "DeterministicVerifier", "SemanticVerifier"}
+        for role, sc in r.scopes.items():
+            assert isinstance(sc, ScopedContext) and sc.reads
+        assert r.scopes["RepositoryNavigator"].finding_ids
+        assert r.scopes["RollbackPlanner"].decision_ids
+
+    def test_verdicts_are_categorical(self, orch):
+        from src.semgraph.objects import VerdictStatus
+        o, _ = orch
+        r = o.run(DEMO_QUERY, keep_hint=DEMO_KEEP)
+        assert r.verdicts
+        assert all(v.status in set(VerdictStatus) for v in r.verdicts)
+        # semantic-only navigation stays a lead, never a verified fact
+        sem = [v for v in r.verdicts if v.verifier == "SemanticVerifier"]
+        assert any(v.status == VerdictStatus.PARTIALLY_SUPPORTED for v in sem)
+
+    def test_change_findings_get_verified(self, orch):
+        o, b = orch
+        r = o.run(DEMO_QUERY, keep_hint=DEMO_KEEP)
+        ci = r.scopes["ChangeIntelligenceAgent"]
+        verified = [b._findings[f] for f in ci.finding_ids
+                    if b._findings[f].status == "verified"]
+        assert verified, "unit matches are deterministic facts — verified"
+
+    def test_plan_records_decisions_with_policy(self, orch):
+        o, b = orch
+        r = o.run(DEMO_QUERY, keep_hint=DEMO_KEEP)
+        assert r.plan.decision_ids
+        cats = {d.category for d in b.get_precedents()}
+        assert {"rollback", "keep", "policy_gate"} <= cats
+
+    def test_report_bounded_and_disclaims_execution(self, orch):
+        o, _ = orch
+        r = o.run(DEMO_QUERY, keep_hint=DEMO_KEEP)
+        text = r.dump()
+        assert len(text) < 6000
+        assert "nothing was executed" in text
+        assert "bbdc659f-U2" in text and "bbdc659f-U1" in text
+
+    def test_no_keep_hint_returns_all_matches(self, orch):
+        o, _ = orch
+        r = o.run("登录验证逻辑出问题了")
+        assert r.problem_units, "unpinned query still finds suspects"
+        assert r.keep_units == []
+        assert r.plan is not None
+
+
 # ================================================================ 9D semantic
 @pytest.fixture(scope="module")
 def mapper(seeded):

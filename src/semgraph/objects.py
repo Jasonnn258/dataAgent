@@ -127,3 +127,20 @@ class Conflict:
     topic: str = ""
     resolved: bool = False
     resolution: str = ""
+
+
+# ---------------------------------------------------------------- verdicts (9L)
+class VerdictStatus(str, Enum):
+    SUPPORTED = "SUPPORTED"
+    PARTIALLY_SUPPORTED = "PARTIALLY_SUPPORTED"
+    UNSUPPORTED = "UNSUPPORTED"
+
+
+@dataclass
+class Verdict:
+    """A verifier's categorical judgment on one finding. Deliberately no
+    numeric confidence — a fake '0.87' is less honest than three states."""
+    finding_id: str
+    status: VerdictStatus
+    verifier: str
+    checks: list[str] = field(default_factory=list)   # what was actually checked
