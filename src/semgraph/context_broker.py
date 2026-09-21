@@ -86,8 +86,10 @@ class ContextBroker:
         全部。未激活的图层从 v2 投影里剪掉；未激活的能力在 agent 尝试
         使用时大声报错，绝不静默降级。"""
         from src.semgraph.enrich import get_context_graph
+        from src.execution import ExecutionRecorder
         self.repo = repo
-        self.rec = rec or ToolRecorder()
+        # 11F：默认用结构化记录器（ToolRecorder 的超集，兼容零改动）
+        self.rec = rec or ExecutionRecorder()
         self._v1 = get_context_graph(self.repo, self.rec)
         self.graph = GraphV2.from_v1(self._v1)
         self.layers = (set(layers) | {"code"}) if layers is not None \

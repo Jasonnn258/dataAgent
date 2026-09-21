@@ -22,6 +22,13 @@ class PolicyService:
 
     def run_policy_gate(self, context: dict, task_id: str = "") -> PolicyResult:
         """跑完整规则集并把结果记成可审计 decision。返回触发的最重动作。"""
+        span = getattr(self.broker.rec, "span", None)
+        if span is None:
+            return self._gate(context, task_id)
+        with span("policy", "PolicyGate", "gate", task_id=task_id):
+            return self._gate(context, task_id)
+
+    def _gate(self, context: dict, task_id: str) -> PolicyResult:
         from src.semgraph.policy import gate
         result = gate(context)
         risk = {"PASS": "low", "HUMAN_REVIEW": "medium",

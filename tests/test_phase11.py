@@ -560,3 +560,105 @@ class TestToolResult:
         from src.errors import DataAgentError
         with pytest.raises(DataAgentError):
             broker.path("file:src/lib/retry.ts", "feature:no-such-thing")
+
+
+# ================================================================ 11F：ExecutionRecorder v2
+@pytest.fixture(scope="module")
+def exec_broker(seeded):
+    """结构化记录器上的完整 broker（变更层齐备）。"""
+    from src.execution import ExecutionRecorder
+    from src.semgraph.change_graph import build_change_graph
+    from src.semgraph.context_broker import ContextBroker
+    b = ContextBroker(FIXTURE, ExecutionRecorder())
+    build_change_graph(b)
+    return b
+
+
+class TestExecutionRecorder:
+    def test_recorder_is_toolrecorder_superset(self):
+        from src.execution import ExecutionRecorder
+        from src.schema import ToolRecorder
+        rec = ExecutionRecorder()
+        assert isinstance(rec, ToolRecorder)
+        rec.tool("git:log")
+        rec.context(10, 2)
+        rec.warn("w")
+        assert rec.calls == ["git:log"]
+        m = rec.metrics("lexical", False)
+        assert m.tool_call_count == 1
+
+    def test_tool_names_classified_into_layers(self):
+        from src.execution import ExecutionRecorder
+        rec = ExecutionRecorder()
+        rec.tool("git:log")
+        rec.tool("agent:RepositoryNavigator:navigate")
+        rec.tool("skill:safe_rollback:run")
+        rec.tool("semgraph:build")
+        layers = {(e.layer, e.actor) for e in rec.events}
+        assert ("tool", "git") in layers
+        assert ("agent", "RepositoryNavigator") in layers
+        assert ("skill", "safe_rollback") in layers
+        assert ("tool", "semgraph") in layers
+
+    def test_span_nesting_tree_and_failure(self):
+        from src.execution import ExecutionRecorder
+        rec = ExecutionRecorder()
+        with rec.span("agent", "Orchestrator", "run", task_id="t1"):
+            with rec.span("skill", "resolve_target", "run") as ev:
+                ev.evidence_ids.append("ev:1")
+                rec.tool("git:log")           # 应挂到当前 skill span 下
+            with pytest.raises(KeyError):
+                with rec.span("skill", "boom", "run"):
+                    raise KeyError("x")
+        tree = rec.tree()
+        root = tree["roots"][0]["event"]
+        assert root.actor == "Orchestrator" and root.task_id == "t1"
+        kids = tree["roots"][0]["children"]
+        assert kids[0]["event"].actor == "resolve_target"
+        assert kids[0]["children"][0]["event"].layer == "tool"
+        assert kids[0]["event"].evidence_ids == ["ev:1"]
+        failed = kids[1]["event"]
+        assert failed.status == "failed" and "KeyError" in failed.meta["error"]
+        assert root.duration_ms >= kids[0]["event"].duration_ms
+
+    def test_warn_attaches_to_open_span(self):
+        from src.execution import ExecutionRecorder
+        rec = ExecutionRecorder()
+        with rec.span("skill", "s", "run"):
+            rec.warn("layer inactive")
+        assert rec.events[-1].warnings == ["layer inactive"]
+
+    def test_broker_defaults_to_execution_recorder(self, seeded):
+        from src.execution import ExecutionRecorder
+        from src.semgraph.context_broker import ContextBroker
+        b = ContextBroker(FIXTURE)
+        assert isinstance(b.rec, ExecutionRecorder)
+        # 经门面的语义查询会留下结构化事件（图构建可能被进程缓存跳过）
+        b.map_semantic_candidates(DEMO_QUERY)
+        assert any(e.actor == "semantic" for e in b.rec.events)
+
+    def test_orchestrator_produces_linked_event_tree(self, exec_broker):
+        from src.agents import Orchestrator
+        o = Orchestrator(exec_broker)
+        rec = exec_broker.rec
+        n0 = len(rec.events)
+        r = o.run(DEMO_QUERY, keep_hint=DEMO_KEEP)
+        new = rec.events[n0:]
+        skills = [e for e in new if e.layer == "skill"]
+        assert {e.actor for e in skills} >= {"resolve_target",
+                                             "change_unit_analysis",
+                                             "safe_rollback"}
+        # skill span 带证据关联与状态
+        assert any(e.evidence_ids for e in skills)
+        assert all("status" in e.meta for e in skills if e.status != "failed")
+        # policy 裁决单独成层
+        assert any(e.layer == "policy" and e.actor == "PolicyGate"
+                   for e in new)
+        # 旧指标面不破坏：平铺轨迹仍在
+        assert any(c.startswith("agent:") for c in rec.calls)
+        s = rec.summary()
+        assert s["events"] == len(rec.events) and s["failed"] == 0
+        assert s["by_layer"].get("skill", 0) >= 4
+        # 事件里没有任何载荷/CoT 字段
+        ev = skills[0]
+        assert not hasattr(ev, "payload") and not hasattr(ev, "context")

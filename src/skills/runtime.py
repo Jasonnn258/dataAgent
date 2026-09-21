@@ -33,10 +33,26 @@ class SkillRuntime:
         ctx = dict(context)  # 不污染调用方的 dict
         if self.llm is not None and skill.spec.semantic_reasoning == "allowed":
             ctx.setdefault("llm", self.llm)
-        self.broker.rec.tool(f"skill:{name}:run")
         # 11C：能力执法 —— skill 只能碰自己声明过的 capability
         guard = CapabilityGuard(self.broker, name,
                                 skill.spec.allowed_capabilities)
-        result = skill.run(ctx, guard)
-        result.capabilities_used = sorted(guard.used)
-        return result
+
+        def _exec() -> SkillResult:
+            result = skill.run(ctx, guard)
+            result.capabilities_used = sorted(guard.used)
+            return result
+
+        # 11F：结构化记录器上开 skill span（耗时/证据关联/父子链）；
+        # 普通 ToolRecorder 退回平铺轨迹（兼容）
+        span = getattr(self.broker.rec, "span", None)
+        if span is None:
+            self.broker.rec.tool(f"skill:{name}:run")
+            return _exec()
+        with span("skill", name, "run",
+                  task_id=ctx.get("task_id", "")) as ev:
+            result = _exec()
+            ev.evidence_ids = list(result.evidence_ids or [])
+            ev.meta["status"] = result.status
+            for w in (result.warnings or [])[:3]:  # 有界
+                ev.warnings.append(w[:200])
+            return result
