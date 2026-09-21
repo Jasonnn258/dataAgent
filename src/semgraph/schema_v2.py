@@ -281,6 +281,12 @@ class GraphV2:
             frontier = nxt
         return [self._nodes[i] for i in seen if i in self._nodes]
 
+    def edges_from(self, nid: str) -> list[Edge]:
+        return list(self._out.get(nid, []))
+
+    def edges_to(self, nid: str) -> list[Edge]:
+        return list(self._in.get(nid, []))
+
     def edge_between(self, src: str, dst: str, *types: EdgeType) -> list[Edge]:
         want = set(types) if types else None
         return [e for e in self._out.get(src, [])
