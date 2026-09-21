@@ -23,8 +23,9 @@ from src.services.policy import PolicyService
 from src.services.resolution import ResolutionService, TargetContext
 from src.services.semantic import SemanticService
 from src.services.task_view import TaskViewService
+from src.services.tooling import call_tool
 
 __all__ = ["GraphQueryService", "ResolutionService", "TaskViewService",
            "ChangeService", "EvidenceService", "DecisionService",
            "PolicyService", "SemanticService",
-           "TargetContext", "ChangeContext"]
+           "TargetContext", "ChangeContext", "call_tool"]

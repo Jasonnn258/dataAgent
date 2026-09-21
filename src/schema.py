@@ -93,6 +93,60 @@ class ToolRecorder:
         )
 
 
+class ToolResult:
+    """物理工具调用的统一返回形态（Phase 11E）。
+
+    三态：
+      - ok=True, degraded=False  完整成功
+      - ok=True, degraded=True   降级成功（确定性退路生效，如请求了
+        LLM 精化但不可用、只剩词面/别名匹配 —— 结果可用，但要留痕）
+      - ok=False                 失败（error 必填；调用方决定大声报错
+        还是走显式退路）
+
+    SkillResult（skill 层）与 11F ExecutionEvent 都对齐这个形态。
+    value 的类型由具体工具定义；meta 放计数/耗时等元信息，绝不放大
+    载荷（有界原则）。
+    """
+
+    def __init__(self, tool: str, ok: bool = True, value: Any = None,
+                 degraded: bool = False, error: str = "",
+                 meta: dict | None = None) -> None:
+        self.tool = tool
+        self.ok = ok
+        self.value = value
+        self.degraded = degraded
+        self.error = error
+        self.meta = meta or {}
+
+    @classmethod
+    def success(cls, tool: str, value: Any = None, **meta) -> "ToolResult":
+        return cls(tool, ok=True, value=value, meta=dict(meta))
+
+    @classmethod
+    def degraded_ok(cls, tool: str, value: Any, note: str = "",
+                    **meta) -> "ToolResult":
+        m = dict(meta)
+        if note:
+            m["note"] = note
+        return cls(tool, ok=True, value=value, degraded=True, meta=m)
+
+    @classmethod
+    def failure(cls, tool: str, error: str, **meta) -> "ToolResult":
+        return cls(tool, ok=False, error=error, meta=dict(meta))
+
+    def unwrap(self) -> Any:
+        """成功取值；失败就地大声报错（绝不把失败静默成 None）。"""
+        if not self.ok:
+            from src.errors import DataAgentError
+            raise DataAgentError(f"tool {self.tool!r} failed: {self.error}")
+        return self.value
+
+    def __repr__(self) -> str:  # 有界打印：不含 value 载荷
+        state = "failed" if not self.ok else \
+            ("degraded" if self.degraded else "ok")
+        return f"<ToolResult {self.tool} {state} {self.meta}>"
+
+
 # ---------------------------------------------------------------- task 1: locate
 
 class LocatedCandidate(BaseModel):

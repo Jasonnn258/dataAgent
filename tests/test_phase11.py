@@ -489,3 +489,74 @@ class TestBrokerServices:
                           layers={"code", "semantic"})
         with pytest.raises(DataAgentError):
             b.create_task_view("t", ["sym:src/lib/auth.ts::validateAccount"])
+
+
+# ================================================================ 11E：统一 ToolResult
+class TestToolResult:
+    def test_three_states_and_unwrap(self):
+        from src.errors import DataAgentError
+        from src.schema import ToolResult
+        ok = ToolResult.success("t.x", 42, n=1)
+        assert ok.ok and not ok.degraded and ok.unwrap() == 42
+        assert ok.meta["n"] == 1
+        deg = ToolResult.degraded_ok("t.x", [], note="fallback")
+        assert deg.ok and deg.degraded and deg.meta["note"] == "fallback"
+        bad = ToolResult.failure("t.x", "boom")
+        assert not bad.ok and bad.error == "boom"
+        with pytest.raises(DataAgentError):
+            bad.unwrap()
+
+    def test_repr_is_bounded_no_payload(self):
+        from src.schema import ToolResult
+        r = ToolResult.success("t.x", "x" * 10_000)
+        assert "x" * 100 not in repr(r)
+        assert "t.x" in repr(r) and "ok" in repr(r)
+
+    def test_call_tool_success_and_failure(self):
+        from src.services import call_tool
+        r = call_tool("probe", lambda a, b: a + b, 1, b=2)
+        assert r.ok and r.value == 3 and "ms" in r.meta
+        r2 = call_tool("probe", lambda: 1 / 0)
+        assert not r2.ok and "ZeroDivisionError" in r2.error
+
+    def test_semantic_service_reports_llm_state(self, broker):
+        r = broker._semantic_svc.map_candidates_result(DEMO_QUERY, llm=None)
+        assert r.ok and r.meta["llm_used"] is False
+        assert r.meta["candidates"] >= 1
+        assert not r.degraded, "未请求 LLM 的确定性路径不算降级"
+
+        class DeadLLM:
+            available = False
+        r2 = broker._semantic_svc.map_candidates_result(
+            DEMO_QUERY, llm=DeadLLM())
+        assert r2.ok and r2.degraded
+        assert "unavailable" in r2.meta["note"]
+        # broker 门面仍返回候选列表（外部行为不变）
+        assert broker.map_semantic_candidates(DEMO_QUERY)
+
+    def test_semantic_layer_off_is_degraded_empty(self, seeded):
+        from src.semgraph.context_broker import ContextBroker
+        b = ContextBroker(FIXTURE, ToolRecorder(), layers={"code"})
+        r = b._semantic_svc.map_candidates_result(DEMO_QUERY)
+        assert r.ok and r.degraded and r.value == []
+        assert "semantic layer inactive" in r.meta["note"]
+
+    def test_graph_path_toolresult(self, broker):
+        # 两个 v1 真实节点（IMPORTS 关联）；同步只写 broker 专属副本
+        r = broker._graph_svc.path_result("file:src/lib/retry.ts",
+                                          "file:src/lib/ai-helpers.ts")
+        assert r.ok and "ms" in r.meta
+        v = broker.path("file:src/lib/retry.ts",
+                        "file:src/lib/ai-helpers.ts")
+        assert v is None or isinstance(v, list)
+        # 跨 broker 零污染：v1 进程级缓存不被 sync 改写
+        shared = broker._v1
+        n_files = sum(1 for e in shared.kg.entities if e["type"] == "File")
+        broker.path("file:src/lib/retry.ts", "file:src/lib/auth.ts")
+        n_files2 = sum(1 for e in shared.kg.entities if e["type"] == "File")
+        assert n_files == n_files2
+
+    def test_path_failure_is_loud_not_none(self, broker):
+        from src.errors import DataAgentError
+        with pytest.raises(DataAgentError):
+            broker.path("file:src/lib/retry.ts", "feature:no-such-thing")
