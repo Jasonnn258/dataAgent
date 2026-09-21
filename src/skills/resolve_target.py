@@ -21,6 +21,7 @@ class ResolveTargetSkill(BaseSkill):
         produced_outputs=["feature_id", "feature_name", "related_symbols",
                           "terms", "finding_id", "candidates"],
         allowed_capabilities=["semantic.map_candidates",
+                              "semantic.query_terms",
                               "repository.resolve_target",
                               "evidence.add", "evidence.finding.add"],
         evidence_requirements="SEMANTIC_MAPPING（语义命中）或 AST（确定性退路）",

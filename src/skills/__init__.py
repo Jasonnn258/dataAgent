@@ -10,6 +10,7 @@ ContextBroker 取能力，绝不直接碰 git/AST/search/semantica。
 from src.skills.spec import (SKILL_FAILED, SKILL_PARTIAL, SKILL_SUCCESS,
                              SkillResult, SkillSpec)
 from src.skills.base import BaseSkill
+from src.skills.capability import CapabilityGuard, capability_allowed
 from src.skills.registry import SKILL_REGISTRY, default_registry, get_skill, register
 from src.skills.runtime import SkillRuntime
 
@@ -23,7 +24,8 @@ from src.skills.evidence_verification import EvidenceVerificationSkill
 from src.skills.policy_check import PolicyCheckSkill
 
 __all__ = ["SKILL_FAILED", "SKILL_PARTIAL", "SKILL_SUCCESS", "SkillResult",
-           "SkillSpec", "BaseSkill", "SKILL_REGISTRY", "default_registry",
+           "SkillSpec", "BaseSkill", "CapabilityGuard", "capability_allowed",
+           "SKILL_REGISTRY", "default_registry",
            "get_skill", "register", "SkillRuntime",
            "ResolveTargetSkill", "BuildTaskViewSkill", "ImpactAnalysisSkill",
            "ChangeUnitAnalysisSkill", "CouplingAnalysisSkill",

@@ -343,3 +343,104 @@ class TestAgentsDelegateToSkills:
         produced = [f for f in broker.all_findings()
                     if f.id == res.finding_id]
         assert produced and produced[0].producer == "RepositoryNavigator"
+
+
+# ================================================================ 11C：能力执法
+class TestCapabilityEnforcement:
+    def test_every_declared_capability_exists_on_broker(self):
+        """skill 声明的 capability 必须都是 broker 真实提供的方法。"""
+        from src.semgraph.context_broker import CAPABILITIES
+        from src.skills import default_registry
+        provided = set(CAPABILITIES.values())
+        for name, skill in default_registry().items():
+            dangling = [c for c in skill.spec.allowed_capabilities
+                        if c not in provided and not c.endswith(".*")]
+            assert not dangling, f"{name} 声明了不存在的能力: {dangling}"
+
+    def test_runtime_enforces_declarations_fail_fast(self, broker):
+        """未声明的能力调用：就地抛错，绝不静默放行。"""
+        from src.skills.base import BaseSkill
+        from src.skills.runtime import SkillRuntime
+        from src.skills.spec import SkillSpec
+
+        class EvilSkill(BaseSkill):
+            spec = SkillSpec(name="evil_probe",
+                             description="calls broker.node undeclared",
+                             required_inputs=[],
+                             allowed_capabilities=[])   # 什么都没声明
+
+            def _execute(self, context, broker):
+                broker.node("sym:src/lib/auth.ts::validateAccount")
+                from src.skills.spec import SKILL_SUCCESS, SkillResult
+                return SkillResult(skill=self.spec.name, status=SKILL_SUCCESS)
+
+        rt = SkillRuntime(broker, registry={"evil_probe": EvilSkill()})
+        r = rt.run("evil_probe", {})
+        assert r.status == "failed"
+        assert "undeclared capability" in r.error
+        assert "repository.node" in r.error
+
+    def test_free_introspection_needs_no_capability(self, broker):
+        from src.skills.base import BaseSkill
+        from src.skills.runtime import SkillRuntime
+        from src.skills.spec import (SKILL_SUCCESS, SkillResult, SkillSpec)
+
+        class ProbeSkill(BaseSkill):
+            spec = SkillSpec(name="probe", required_inputs=[],
+                             allowed_capabilities=[])
+
+            def _execute(self, context, broker):
+                # layer_active 是自由内省：不算能力
+                layers = {n: broker.layer_active(n)
+                          for n in ("code", "semantic", "change")}
+                return SkillResult(skill=self.spec.name, status=SKILL_SUCCESS,
+                                   data={"layers": layers})
+
+        r = SkillRuntime(broker, registry={"probe": ProbeSkill()}).run(
+            "probe", {})
+        assert r.status == "success" and r.data["layers"]["semantic"] is True
+        assert r.capabilities_used == []
+
+    def test_result_records_capabilities_used(self, runtime):
+        r = runtime.run("coupling_analysis", {
+            "files_a": ["src/lib/ai-helpers.ts"],
+            "files_b": ["src/lib/retry.ts"]})
+        assert r.status == "success"
+        assert r.capabilities_used == ["change.get_couplings"]
+
+    def test_wildcard_prefix_allows_family(self):
+        from src.skills.capability import capability_allowed
+        assert capability_allowed("evidence.finding.add",
+                                  ["evidence.finding.*"])
+        assert capability_allowed("evidence.finding.set_status",
+                                  ["evidence.finding.*"])
+        assert not capability_allowed("evidence.add", ["evidence.finding.*"])
+        assert not capability_allowed("policy.gate", [])
+
+    def test_all_eight_skills_run_under_guard(self, runtime, broker):
+        """执法开启后全部 skill 仍可完整跑通（声明=使用，无缺口）。"""
+        nav = runtime.run("resolve_target", {"query": DEMO_QUERY})
+        assert nav.status == "success"
+        cu = runtime.run("change_unit_analysis",
+                         {"terms": nav.data["terms"]})
+        assert cu.status == "success"
+        v = runtime.run("build_task_view", {
+            "task_id": "tv-cap", "target_ids": nav.data["related_symbols"][:1]})
+        assert v.ok
+        imp = runtime.run("impact_analysis", {
+            "target_ids": nav.data["related_symbols"][:1],
+            "task_id": "tv-cap"})
+        assert imp.status == "success"
+        assert runtime.run("evidence_verification", {
+            "finding_ids": [m["finding_id"] for m in cu.data["matches"]]}
+        ).status == "success"
+        assert runtime.run("policy_check", {
+            "rollback_symbols": ["validateAccount"],
+            "keep_symbols": ["rewordTitle"],
+            "affected_routes": ["/api/auth/login"]}).status == "success"
+        sr = runtime.run("safe_rollback", {
+            "problem_matches": cu.data["matches"], "keep_matches": []})
+        assert sr.status == "success"
+        # 仲裁真源也可直接跑（纯函数，无 broker）
+        from src.skills.safe_rollback import arbitrate
+        assert arbitrate([], []) == ([], [])

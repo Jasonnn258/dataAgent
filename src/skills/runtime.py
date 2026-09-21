@@ -11,6 +11,7 @@
 """
 from __future__ import annotations
 
+from src.skills.capability import CapabilityGuard
 from src.skills.spec import SKILL_FAILED, SKILL_SUCCESS, SkillResult
 
 
@@ -33,4 +34,9 @@ class SkillRuntime:
         if self.llm is not None and skill.spec.semantic_reasoning == "allowed":
             ctx.setdefault("llm", self.llm)
         self.broker.rec.tool(f"skill:{name}:run")
-        return skill.run(ctx, self.broker)
+        # 11C：能力执法 —— skill 只能碰自己声明过的 capability
+        guard = CapabilityGuard(self.broker, name,
+                                skill.spec.allowed_capabilities)
+        result = skill.run(ctx, guard)
+        result.capabilities_used = sorted(guard.used)
+        return result

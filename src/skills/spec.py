@@ -46,6 +46,7 @@ class SkillResult:
     warnings: list[str] = field(default_factory=list)
     error: str = ""
     trace_id: str = ""
+    capabilities_used: list[str] = field(default_factory=list)  # 11C 守卫回填
 
     @property
     def ok(self) -> bool:

@@ -44,6 +44,49 @@ class ChangeContext:
     evidence_ids: list[str] = field(default_factory=list)
 
 
+# ------------------------------------------------------------ 能力映射（11C）
+# broker 方法名 → capability 名。SkillSpec.allowed_capabilities 声明的
+# 就是右侧的名字；SkillRuntime 用它做运行期执法（fail fast）。
+# 未列出的方法（layer_active/stats/rec/graph…）是自由内省，不算能力。
+CAPABILITIES: dict[str, str] = {
+    # repository.*：代码层解析与节点读取
+    "resolve_target":        "repository.resolve_target",
+    "get_target_context":    "repository.get_context",
+    "node":                  "repository.node",
+    # graph.*：有界视图与路径
+    "path":                  "graph.find_path",
+    "create_task_view":      "graph.create_task_view",
+    "expand_task_view":      "graph.expand_task_view",
+    "get_task_view":         "graph.get_task_view",
+    # change.*：变更层事实
+    "get_change_context":    "change.get_context",
+    "find_change_units":     "change.find_units",
+    "import_couplings":      "change.get_couplings",
+    # evidence.*：证据与 finding 的注册/查询/状态迁移
+    "add_evidence":          "evidence.add",
+    "get_evidence":          "evidence.get",
+    "all_evidence":          "evidence.query",
+    "evidence_about":        "evidence.query",
+    "add_finding":           "evidence.finding.add",
+    "all_findings":          "evidence.query",
+    "unsupported_findings":  "evidence.query",
+    "conflicts":             "evidence.query",
+    "conflicts_involving":   "evidence.query",
+    "unresolved_conflicts":  "evidence.query",
+    "set_finding_status":    "evidence.finding.set_status",
+    "resolve_conflict":      "evidence.finding.set_status",
+    # decision.*：决策记忆
+    "record_decision":       "decision.record",
+    "get_precedents":        "decision.query",
+    # policy.*：规则门
+    "run_policy_gate":       "policy.gate",
+    "check_policy":          "policy.evaluate",
+    # semantic.*：语义门面（LLM 白名单在 skill spec 侧）
+    "map_semantic_candidates": "semantic.map_candidates",
+    "build_query_terms":     "semantic.query_terms",
+}
+
+
 class ContextBroker:
     # "taskview" 是伪层：它门控的是有界 task view，不是图内容
     #（Phase 10 消融里的 G3）
