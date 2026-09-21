@@ -82,6 +82,7 @@ class Decision:
     risk: str = "low"                 # low | medium | high
     decision_maker: str = ""          # agent or "human:<name>"
     reason_summary: str = ""          # audit-facing, NOT model-private CoT
+    policy: str = ""                  # "rule v_version -> ACTION" when gated
     timestamp: str = field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%S%z"))
 
     @classmethod

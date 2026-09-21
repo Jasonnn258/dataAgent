@@ -345,6 +345,59 @@ class TestVerificationAndConflicts:
 
 
 
+# ================================================================ 9H/9I decision memory + gate
+class TestDecisionMemoryAndGate:
+    def test_reason_summary_capped_not_cot(self, broker):
+        from src.semgraph.objects import Decision
+        long_reason = "because " * 200  # 1600 chars of pseudo-CoT
+        d = broker.record_decision(Decision.make(
+            "keep", "keep unit X", target="file:x",
+            decision_maker="RollbackPlanner", reason_summary=long_reason))
+        assert len(d.reason_summary) <= broker.REASON_SUMMARY_CAP
+        assert any("capped" in w for w in broker.rec.warnings)
+
+    def test_decision_records_policy_provenance(self, broker):
+        from src.semgraph.objects import Decision
+        broker.record_decision(Decision.make(
+            "rollback", "rollback unit Y only", target="file:y",
+            decision_maker="RollbackPlanner", risk="medium",
+            policy="rollback_public_api v1.0.0 -> HUMAN_REVIEW",
+            reason_summary="route touched"))
+        node = broker.graph.node(
+            next(d.id for d in broker.get_precedents(category="rollback")
+                 if d.outcome == "rollback unit Y only"))
+        assert node.props["policy"].startswith("rollback_public_api")
+
+    def test_gate_clean_context_passes(self, broker):
+        r = broker.run_policy_gate({"rollback_symbols": ["a"],
+                                    "keep_symbols": ["b"]}, task_id="t-clean")
+        assert r.action.value == "PASS" and r.rule is None
+        assert any(d.outcome == "PASS" and d.task_id == "t-clean"
+                   for d in broker.get_precedents(category="policy_gate"))
+
+    def test_gate_block_beats_human_review(self, broker):
+        r = broker.run_policy_gate({
+            "rollback_symbols": ["s"], "keep_symbols": ["s"],   # HUMAN_REVIEW
+            "unsupported_findings": 3})                          # BLOCK
+        assert r.action.value == "BLOCK" and r.rule.name == "unsupported_finding"
+
+    def test_gate_human_review_when_only_review_rules_trigger(self, broker):
+        r = broker.run_policy_gate({
+            "rollback_symbols": ["a"], "keep_symbols": ["a"],
+            "changed_files": ["db/migrate/0007.sql"]})
+        assert r.action.value == "HUMAN_REVIEW" and r.rule is not None
+
+    def test_precedents_by_query_symbols(self, broker):
+        from src.semgraph.objects import Decision
+        broker.record_decision(Decision.make(
+            "keep", "keep titleUnitZ branding change", target="file:z",
+            decision_maker="RollbackPlanner", reason_summary="no coupling"))
+        hits = broker.get_precedents(query="branding titleUnitZ")
+        assert any(d.outcome == "keep titleUnitZ branding change" for d in hits)
+        assert broker.get_precedents(query="qqqzzz nonexistent") == []
+
+
+# ================================================================ 9I policy
 class TestPolicyGate:
     def test_shared_symbol_human_review(self, broker):
         r = broker.check_policy("rollback_keep_same_symbol", {
@@ -469,6 +522,7 @@ class TestChangeGraph:
         assert in_edges, "ChangeUnit MODIFIES Feature must exist after seeding"
 
 
+# ================================================================ 9D semantic
 @pytest.fixture(scope="module")
 def mapper(seeded):
     from src.semgraph.context_broker import ContextBroker

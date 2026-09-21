@@ -381,12 +381,22 @@ class ContextBroker:
             reason_summary=f"winner={winner or 'none'}"))
         return conflict
 
-    # ------------------------------------------------------------ decisions
+    # ------------------------------------------------------------ decisions (9H)
+    # hard cap on audit text: decisions store reason summaries, never a
+    # model's hidden chain of thought (spec 9H)
+    REASON_SUMMARY_CAP = 500
+
     def record_decision(self, d: Decision) -> Decision:
+        if len(d.reason_summary) > self.REASON_SUMMARY_CAP:
+            self.rec.warn(
+                f"decision {d.id}: reason_summary {len(d.reason_summary)} chars "
+                f"capped to {self.REASON_SUMMARY_CAP} — hidden CoT is not stored")
+            d.reason_summary = d.reason_summary[:self.REASON_SUMMARY_CAP - 1] + "…"
         self._decisions[d.id] = d
         self.graph.add_node(Node(d.id, NodeType.DECISION, props={
             "category": d.category, "outcome": d.outcome, "task_id": d.task_id,
-            "risk": d.risk, "decision_maker": d.decision_maker}))
+            "risk": d.risk, "decision_maker": d.decision_maker,
+            "reason_summary": d.reason_summary, "policy": d.policy}))
         for eid in d.evidence_ids:
             if self._evidence.get(eid):
                 self.graph.add_edge(Edge(d.id, eid, EdgeType.SUPPORTED_BY))
@@ -395,13 +405,21 @@ class ContextBroker:
                 self.graph.add_edge(Edge(d.id, fid, EdgeType.DERIVED_FROM))
         return d
 
-    def get_precedents(self, category: str = "", target: str = "") -> list[Decision]:
+    def get_precedents(self, category: str = "", target: str = "",
+                       query: str = "") -> list[Decision]:
+        """Decision memory lookup: by category, by target node, and/or by
+        free-text query whose symbols must appear in the decision blob."""
+        qsyms = _topic_symbols(query) if query else frozenset()
         out = []
         for d in self._decisions.values():
             if category and d.category != category:
                 continue
             if target and target not in (d.target or ""):
                 continue
+            if qsyms:
+                blob = f"{d.outcome} {d.reason_summary} {d.target}"
+                if not (qsyms & _topic_symbols(blob)):
+                    continue
             out.append(d)
         return sorted(out, key=lambda d: d.timestamp)
 
@@ -412,6 +430,22 @@ class ContextBroker:
         if rule is None:
             raise DataAgentError(f"unknown policy rule {rule_name!r}")
         return rule.evaluate(context)
+
+    def run_policy_gate(self, context: dict, task_id: str = "") -> PolicyResult:
+        """Evaluate the full rule set and record the outcome as an auditable
+        decision. Returns the most severe triggered action. Honoring BLOCK
+        is the orchestrator's contract — the gate only decides."""
+        from src.semgraph.policy import gate
+        result = gate(context)
+        risk = {"PASS": "low", "HUMAN_REVIEW": "medium",
+                "BLOCK": "high"}[result.action.value]
+        self.record_decision(Decision.make(
+            "policy_gate", result.action.value, task_id=task_id, risk=risk,
+            decision_maker="PolicyGate",
+            reason_summary=result.detail[:200],
+            policy=(f"{result.rule.name} v{result.rule.version} -> "
+                    f"{result.action.value}") if result.rule else "none-triggered"))
+        return result
 
     # ------------------------------------------------------------ util
     def path(self, a: str, b: str) -> list[str] | None:

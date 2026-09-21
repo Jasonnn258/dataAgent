@@ -92,3 +92,24 @@ POLICY_RULES: dict[str, SimpleRule] = {
         "unresolved_test_failure", PolicyAction.BLOCK,
         "test failures relevant to the decision are unresolved", _test_failure),
 }
+
+_ACTION_ORDER = {PolicyAction.PASS: 0, PolicyAction.HUMAN_REVIEW: 1,
+                 PolicyAction.BLOCK: 2}
+
+
+def evaluate_all(context: dict) -> list[PolicyResult]:
+    """Every triggered rule (untriggered rules stay silent — 'checked and
+    clean' is recorded once by the gate, not per rule)."""
+    return [r for r in (rule.evaluate(context)
+                        for rule in POLICY_RULES.values()) if not r.passed]
+
+
+def gate(context: dict) -> PolicyResult:
+    """Most severe triggered action across the whole rule set. The caller
+    (orchestrator) must honor BLOCK — the gate itself never executes."""
+    triggered = evaluate_all(context)
+    if not triggered:
+        return PolicyResult(
+            rule=None, action=PolicyAction.PASS,
+            detail=f"clean: {len(POLICY_RULES)} policy rules checked, none triggered")
+    return max(triggered, key=lambda r: _ACTION_ORDER[r.action])
