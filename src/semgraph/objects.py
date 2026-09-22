@@ -26,6 +26,7 @@ class EvidenceType(str, Enum):
     TEST = "TEST"
     SEMANTIC_MAPPING = "SEMANTIC_MAPPING"
     EXECUTION_PLAN = "EXECUTION_PLAN"
+    EXECUTION_PATCH = "EXECUTION_PATCH"
 
 
 @dataclass

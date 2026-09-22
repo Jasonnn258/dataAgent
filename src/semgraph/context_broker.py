@@ -25,8 +25,9 @@ from src.semgraph.schema_v2 import EdgeType, GraphV2, Node
 from src.semgraph.task_view import TaskGraphView
 # 11D：服务层（TargetContext/ChangeContext 自服务迁入，这里再导出）
 from src.services import (ChangeService, DecisionService, EvidenceService,
-                          GraphQueryService, PolicyService, ResolutionService,
-                          SemanticService, TaskViewService, WorkspaceService)
+                          GraphQueryService, PatchService, PolicyService,
+                          ResolutionService, SemanticService, TaskViewService,
+                          WorkspaceService)
 from src.services.change import ChangeContext
 from src.services.resolution import TargetContext
 
@@ -75,6 +76,7 @@ CAPABILITIES: dict[str, str] = {
     # prepare 起的一切写动作只落在沙箱 worktree
     "execution_snapshot":    "execution.snapshot",
     "prepare_execution":     "execution.prepare",
+    "build_rollback_patch":  "execution.build_patch",
 }
 
 
@@ -114,6 +116,8 @@ class ContextBroker:
         self._semantic_svc = SemanticService(self)
         # 13B：执行层（快照只读；prepare/沙箱写动作见 WorkspaceService）
         self._workspace_svc = WorkspaceService(self)
+        # 13D：确定性反向 patch 构建（惰性建图缓存，不占 import 期）
+        self._patch_svc = PatchService(self)
 
     def layer_active(self, name: str) -> bool:
         return name in self.layers
@@ -261,6 +265,14 @@ class ContextBroker:
 
     def executions(self):
         return self._workspace_svc.executions()
+
+    def build_rollback_patch(self, attempt):
+        """为 PREPARED 尝试构建确定性反向 patch 并沙箱预检（13D）。
+
+        成功 → PATCH_BUILT + PatchArtifact；预检失败 → CONFLICT 终态。
+        keep 单元构造性排除在 PatchService.build_inverse_patch 里。
+        """
+        return self._patch_svc.build(attempt)
 
     # ------------------------------------------------------------ 工具
     def node(self, node_id: str) -> Node | None:

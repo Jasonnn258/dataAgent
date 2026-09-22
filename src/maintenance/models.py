@@ -140,6 +140,32 @@ class ExecutionPlan:
         }
 
 
+# ---------------------------------------------------------------- 补丁
+
+@dataclass
+class PatchArtifact:
+    """一次补丁构建的结构化产物（13D：proposed.patch 的身份证）。
+
+    sha256 是落盘 patch 文件的哈希 —— 之后任何环节（apply / promote）
+    拿到的 patch 都必须能对上它，对不上就是"patch 被动过"。
+    """
+    path: str                              # proposed.patch 绝对路径
+    base_commit: str = ""                  # 构建基准（plan.base_commit）
+    affected_files: list[str] = field(default_factory=list)
+    affected_symbols: list[str] = field(default_factory=list)
+    source_change_units: list[str] = field(default_factory=list)  # cu id
+    sha256: str = ""
+    hunks_total: int = 0                   # 补丁里 hunk 总数
+    evidence_ids: list[str] = field(default_factory=list)
+
+    def summary(self) -> dict:
+        return {"path": self.path, "base_commit": self.base_commit[:12],
+                "affected_files": self.affected_files,
+                "affected_symbols": self.affected_symbols,
+                "source_change_units": self.source_change_units,
+                "sha256": self.sha256[:12], "hunks_total": self.hunks_total}
+
+
 # ---------------------------------------------------------------- 尝试
 
 @dataclass
