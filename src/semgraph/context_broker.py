@@ -70,6 +70,8 @@ CAPABILITIES: dict[str, str] = {
     # policy.*：规则门
     "run_policy_gate":       "policy.gate",
     "check_policy":          "policy.evaluate",
+    "pre_execution_gate":    "policy.gate",
+    "post_execution_gate":   "policy.gate",
     # semantic.*：语义门面（LLM 白名单在 skill spec 侧）
     "map_semantic_candidates": "semantic.map_candidates",
     "build_query_terms":     "semantic.query_terms",
@@ -245,6 +247,14 @@ class ContextBroker:
         """跑完整规则集并把结果记成可审计 decision。返回触发的最重动作。
         服从 BLOCK 是 orchestrator 的契约 —— gate 只裁决，不执行。"""
         return self._policy_svc.run_policy_gate(context, task_id)
+
+    def pre_execution_gate(self, plan, task_id: str = ""):
+        """执行前门（13H）：计划危险面裁决并记 decision。"""
+        return self._policy_svc.pre_execution_gate(plan, task_id)
+
+    def post_execution_gate(self, attempt, task_id: str = ""):
+        """执行后门（13H）：沙箱事实裁决并记 decision。"""
+        return self._policy_svc.post_execution_gate(attempt, task_id)
 
     # ------------------------------------------------------------ 语义门面（11A）
     def map_semantic_candidates(self, query: str, llm=None) -> list:

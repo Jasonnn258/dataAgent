@@ -119,6 +119,7 @@ class ExecutionPlan:
     expected_changes: list[PlannedChange] = field(default_factory=list)
     forbidden_changes: list[ForbiddenChange] = field(default_factory=list)
     validation_commands: list[list[str]] = field(default_factory=list)  # argv list
+    affected_routes: list[str] = field(default_factory=list)  # 公开 API 面（策略门输入）
     risk: str = "medium"
     policy_result: dict = field(default_factory=dict)   # pre-execution 裁决
     evidence_ids: list[str] = field(default_factory=list)

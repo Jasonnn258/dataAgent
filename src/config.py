@@ -81,6 +81,24 @@ DEFAULT_MAINTENANCE_POLICY: dict = {
         "action_risk": {"PASS": "low", "HUMAN_REVIEW": "medium",
                         "BLOCK": "high"},
     },
+    "execution_policy": {
+        "pre_gate": {
+            "public_api_change": "HUMAN_REVIEW",
+            "auth_change": "HUMAN_REVIEW",
+            "same_symbol_rollback_keep": "HUMAN_REVIEW",
+        },
+        "post_gate": {
+            "unexpected_file_change": "BLOCK",
+            "forbidden_keep_change": "BLOCK",
+            "repository_state_changed": "BLOCK",
+            "apply_check_failed": "BLOCK",
+            "test_failed": "BLOCK",
+            "public_api_change": "HUMAN_REVIEW",
+            "auth_change": "HUMAN_REVIEW",
+            "same_symbol_rollback_keep": "HUMAN_REVIEW",
+        },
+        "auto_push": False,
+    },
 }
 
 _maintenance_policy_cache: dict | None = None

@@ -42,3 +42,39 @@ class PolicyService:
                     f"{result.action.value}") if result.rule else "none-triggered",
             policy_version=policy_version()))
         return result
+
+    # ------------------------------------------------ 执行层双门（13H）
+    def pre_execution_gate(self, plan, task_id: str = "") -> PolicyResult:
+        """执行前门：计划本身的危险面（API/认证/同符号）。只裁决；
+        服从 BLOCK 是 MaintenanceExecutorAgent 的契约。"""
+        from src.config import maintenance_policy, policy_version
+        from src.maintenance.execution_policy import pre_execution_gate
+        result = pre_execution_gate(plan, maintenance_policy())
+        risk = maintenance_policy()["policy"]["action_risk"][result.action.value]
+        self.broker.record_decision(Decision.make(
+            "execution_pre_gate", result.action.value, task_id=task_id,
+            target=",".join(plan.target_files[:3]), risk=risk,
+            decision_maker="ExecutionPolicyGate",
+            reason_summary=result.detail[:200],
+            policy=(f"{result.rule.name} v{result.rule.version} -> "
+                    f"{result.action.value}") if result.rule
+            else "none-triggered",
+            policy_version=policy_version()))
+        return result
+
+    def post_execution_gate(self, attempt, task_id: str = "") -> PolicyResult:
+        """执行后门：沙箱里实际发生的事（硬红线）+ 计划面复检。"""
+        from src.config import maintenance_policy, policy_version
+        from src.maintenance.execution_policy import post_execution_gate
+        result = post_execution_gate(attempt, maintenance_policy())
+        risk = maintenance_policy()["policy"]["action_risk"][result.action.value]
+        self.broker.record_decision(Decision.make(
+            "execution_post_gate", result.action.value,
+            task_id=task_id or attempt.task_id, risk=risk,
+            decision_maker="ExecutionPolicyGate",
+            reason_summary=result.detail[:200],
+            policy=(f"{result.rule.name} v{result.rule.version} -> "
+                    f"{result.action.value}") if result.rule
+            else "none-triggered",
+            policy_version=policy_version()))
+        return result

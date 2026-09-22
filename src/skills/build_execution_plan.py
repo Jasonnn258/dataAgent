@@ -199,6 +199,8 @@ class BuildExecutionPlanSkill(BaseSkill):
             expected_changes=expected_changes,
             forbidden_changes=forbidden_changes,
             validation_commands=commands, risk=risk,
+            affected_routes=[r for r in
+                             (context.get("affected_routes") or []) if r],
             policy_result=policy_result, evidence_ids=ev,
             repository_snapshot=snapshot)
 

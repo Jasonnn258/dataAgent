@@ -10,7 +10,7 @@
 # 消融钩子：set_maintenance_policy(cfg) 进程内覆盖（见 11J eval）；
 # scoring 权重在 skill import 时固化，A/B 消融需 reload 模块。
 
-version: "11I.1"
+version: "13H.1"
 
 rollback:
   scoring:
@@ -29,3 +29,26 @@ policy:
     PASS: low
     HUMAN_REVIEW: medium
     BLOCK: high
+
+# 执行层策略门（Phase 13H）：规则名 → 动作。规则什么时候触发是代码里
+# 的确定性事实检测（src/maintenance/execution_policy.py）；触发后做什么
+# 是这里的策略旋钮 —— BLOCK/HUMAN_REVIEW 档位可以按仓库风险调。
+execution_policy:
+  pre_gate:
+    # 执行前看什么：计划本身的危险面
+    public_api_change: HUMAN_REVIEW       # 动到公开 API 路由
+    auth_change: HUMAN_REVIEW             # 动到认证/登录/凭据面
+    same_symbol_rollback_keep: HUMAN_REVIEW   # 同符号又回退又保留
+  post_gate:
+    # 执行后看什么：沙箱里实际发生的事。这四个是硬红线。
+    unexpected_file_change: BLOCK         # 计划外文件被改
+    forbidden_keep_change: BLOCK          # keep 侧被损伤
+    repository_state_changed: BLOCK       # 源仓库在执行期变了
+    apply_check_failed: BLOCK             # patch 在 base 状态就贴不上
+    test_failed: BLOCK                    # 验证命令失败（可调 HUMAN_REVIEW）
+    public_api_change: HUMAN_REVIEW
+    auth_change: HUMAN_REVIEW
+    same_symbol_rollback_keep: HUMAN_REVIEW
+  # PASS 也不能自动 push —— promote 之后仍然只留工作树改动，
+  # commit/push 永远是人的动作（13J 同步读取本开关）。
+  auto_push: false
