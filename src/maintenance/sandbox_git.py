@@ -1,20 +1,24 @@
-"""沙箱 git 运行器（Phase 13C）：唯一允许碰"写"的 git 出口，且只写沙箱。
+"""沙箱 git 运行器（Phase 13C/13J）：唯一允许碰"写"的 git 出口。
 
 与 GitAPI 的分工：
 - GitAPI（src/git_history/api.py）：只读白名单，跑在源仓库上。
-- SandboxGit（本模块）：worktree 生命周期 + patch 应用/检查 + 沙箱内
-  diff/status。**绝不执行 reset / revert / commit / push / checkout --
-  ** —— 那些命令不在白名单里，构造上不可能跑起来。
+- SandboxGit（本模块）：两条写路径，都在白名单内 ——
+  * run()（13C）：worktree 生命周期 + patch 应用/检查 + 沙箱内
+    diff/status，apply/diff/status 只能跑在**已注册的沙箱 worktree** 里；
+  * run_source()（13J）：晋升专用，apply 沙箱里验证过的 patch 到**源
+    仓库根本身** —— 全系统唯一修改真实 workspace 的物理出口，argv 形态
+    钉死成三种（apply --check / apply / diff HEAD）， PromotionService
+    之外无人可用。
+  **绝不执行 reset / revert / commit / push / checkout --** —— 那些命令
+  不在白名单里，构造上不可能跑起来。
 
-纪律（spec 13C/13F）：
+纪律（spec 13C/13F/13J）：
 - shell=False，只收 argv list，绝不收 shell 字符串
-- cwd 钉死：apply/diff/status 只能跑在**已注册的沙箱 worktree** 里；
-  worktree add/remove/prune 只能跑在源仓库根
 - timeout 有界、输出截断，防止刷屏爆内存
 - 每次调用记 rec.tool 审计轨迹
 
-本模块是物理工具（import subprocess），只允许 src/services/workspace.py
-与 src/maintenance/ 引用 —— tests/test_architecture.py 守着这条线。
+本模块是物理工具（import subprocess），只允许 src/services/ 与
+src/maintenance/ 引用 —— tests/test_architecture.py 守着这条线。
 """
 from __future__ import annotations
 
@@ -108,6 +112,57 @@ class SandboxGit:
             self.rec.tool(f"sandbox-git:{args[0]}")
         if proc.returncode != 0:
             raise GitError(f"sandbox git {args[0]} exited "
+                           f"{proc.returncode}: {proc.stderr.strip()[:300]}")
+        out = proc.stdout
+        if len(out) > _OUTPUT_CAP:
+            out = out[:_OUTPUT_CAP] + f"\n... [truncated {len(out)} chars]"
+        return out
+
+    # ------------------------------------------------------------ 晋升（13J）
+    def run_source(self, args: list[str], timeout: int = _DEFAULT_TIMEOUT
+                   ) -> str:
+        """晋升专用的源仓库出口：全系统唯一能改真实 workspace 的方法。
+
+        argv 钉死成三种形态，其余一律拒绝：
+          ["apply", "--check", <patch>]   预检（必须先过）
+          ["apply", <patch>]              落地（未提交：commit/push 不存在）
+          ["diff", "--no-color", "HEAD"]  落地后的实际改动（reverse.patch 素材）
+        patch 必须是已存在的文件；cwd 永远是源仓库根（调用方指定不了）。
+        """
+        if not (isinstance(args, list) and len(args) >= 2
+                and all(isinstance(a, str) and a for a in args)):
+            raise GitError(f"source git needs argv list, got {args!r}")
+        head = args[0]
+        shapes = (
+            head == "apply" and (
+                (len(args) == 3 and args[1] == "--check")
+                or len(args) == 2),
+            head == "diff" and args[1:] == ["--no-color", "HEAD"],
+        )
+        if not any(shapes):
+            raise GitError(f"blocked source git command: git "
+                           f"{' '.join(args)} (promote allows only "
+                           f"apply [--check] <patch> / diff --no-color HEAD)")
+        if head == "apply":
+            patch = Path(args[-1])
+            if not patch.is_file():
+                raise GitError(f"source apply: patch not found: {patch}")
+        cwd = self.repo
+        cmd = ["git", "-c", "core.quotepath=false"] + args
+        try:
+            proc = subprocess.run(cmd, cwd=str(cwd), capture_output=True,
+                                  text=True, timeout=timeout,
+                                  errors="replace")
+        except subprocess.TimeoutExpired as e:
+            raise GitError(f"source git {head} timed out "
+                           f"({timeout}s)") from e
+        except OSError as e:
+            raise GitError(f"source git {head} failed: {e}") from e
+        if self.rec:
+            self.rec.tool(f"sandbox-git:source:{head}"
+                          + (" --check" if "--check" in args else ""))
+        if proc.returncode != 0:
+            raise GitError(f"source git {head} exited "
                            f"{proc.returncode}: {proc.stderr.strip()[:300]}")
         out = proc.stdout
         if len(out) > _OUTPUT_CAP:

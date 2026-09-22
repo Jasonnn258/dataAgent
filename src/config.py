@@ -98,6 +98,8 @@ DEFAULT_MAINTENANCE_POLICY: dict = {
             "same_symbol_rollback_keep": "HUMAN_REVIEW",
         },
         "auto_push": False,
+        # 13J：晋升总开关，默认关闭
+        "promote_enabled": False,
     },
 }
 

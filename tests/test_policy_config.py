@@ -102,7 +102,7 @@ class TestPolicyConfigFile:
         from src.config import (_parse_simple_yaml,
                                 MAINTENANCE_POLICY_PATH)
         data = _parse_simple_yaml(MAINTENANCE_POLICY_PATH.read_text())
-        assert data["version"] == "13H.1"
+        assert data["version"] == "13J.1"
         assert data["rollback"]["scoring"]["label"] == 3.0
         assert data["rollback"]["tie_break"]["prefer_problem_side"] is True
         assert data["policy"]["action_risk"]["BLOCK"] == "high"

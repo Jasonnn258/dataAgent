@@ -10,7 +10,7 @@
 # 消融钩子：set_maintenance_policy(cfg) 进程内覆盖（见 11J eval）；
 # scoring 权重在 skill import 时固化，A/B 消融需 reload 模块。
 
-version: "13H.1"
+version: "13J.1"
 
 rollback:
   scoring:
@@ -52,3 +52,6 @@ execution_policy:
   # PASS 也不能自动 push —— promote 之后仍然只留工作树改动，
   # commit/push 永远是人的动作（13J 同步读取本开关）。
   auto_push: false
+  # 晋升总开关（13J）：默认关闭。true 也不解锁 push，只解锁
+  # PromotePatchSkill 的受控 apply（仍需 READY_TO_PROMOTE + 显式批准）。
+  promote_enabled: false

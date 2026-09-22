@@ -86,7 +86,7 @@ class TestPolicyConfig:
         assert ep["auto_push"] is False
 
     def test_policy_version_bumped(self):
-        assert maintenance_policy()["version"] == "13H.1"
+        assert maintenance_policy()["version"] == "13J.1"
 
 
 # ================================================================ pre gate

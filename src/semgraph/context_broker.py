@@ -26,9 +26,9 @@ from src.semgraph.task_view import TaskGraphView
 # 11D：服务层（TargetContext/ChangeContext 自服务迁入，这里再导出）
 from src.services import (ChangeService, DecisionService, EvidenceService,
                           GraphQueryService, PatchService, PolicyService,
-                          ResolutionService, SemanticService, TaskViewService,
-                          ValidationService, VerificationService,
-                          WorkspaceService)
+                          PromotionService, ResolutionService, SemanticService,
+                          TaskViewService, ValidationService,
+                          VerificationService, WorkspaceService)
 from src.services.change import ChangeContext
 from src.services.resolution import TargetContext
 
@@ -83,6 +83,10 @@ CAPABILITIES: dict[str, str] = {
     "apply_execution_patch": "execution.apply_patch",
     "validate_execution":    "execution.validate",
     "verify_execution":      "execution.verify",
+    # 13J：晋升 —— 唯一允许修改真实 workspace 的能力（默认关，需审批态
+    # + explicit_approval + promote_enabled 三把钥匙）
+    "approve_promotion":     "execution.approve",
+    "promote_execution":     "execution.promote",
 }
 
 
@@ -128,6 +132,8 @@ class ContextBroker:
         self._validation_svc = ValidationService(self)
         # 13G：执行结果终审（Verifier 只裁决，不修复）
         self._verification_svc = VerificationService(self)
+        # 13J：审批 + 晋升（唯一真实仓库写路径；默认关闭）
+        self._promotion_svc = PromotionService(self)
 
     def layer_active(self, name: str) -> bool:
         return name in self.layers
@@ -311,6 +317,24 @@ class ContextBroker:
         PARTIAL 不推进状态（软面没齐不许往 promote 走）。
         """
         return self._verification_svc.verify(attempt)
+
+    def approve_promotion(self, execution_id: str, approved_by: str = "human"):
+        """审批（13J）：VERIFIED → READY_TO_PROMOTE，冻结 verified.patch。
+
+        复跑 post gate，BLOCK 拒批（POLICY_BLOCKED 终态）。这是人类动作
+        的记录点，不在任何 agent 的 SKILLS 里。
+        """
+        return self._promotion_svc.approve(execution_id, approved_by)
+
+    def promote_execution(self, execution_id: str, explicit_approval=None,
+                          actor: str = "PromotePatchSkill"):
+        """晋升（13J）：verified.patch → 真实仓库。唯一真实仓库写能力。
+
+        三把钥匙：READY_TO_PROMOTE + explicit_approval is True +
+        promote_enabled。落地后不 commit 不 push，reverse.patch 留档。
+        """
+        return self._promotion_svc.promote(execution_id, explicit_approval,
+                                           actor)
 
     # ------------------------------------------------------------ 工具
     def node(self, node_id: str) -> Node | None:

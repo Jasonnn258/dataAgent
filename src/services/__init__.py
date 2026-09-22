@@ -18,6 +18,7 @@ src/change_units、semantica —— 只在图构建期经 enrich 进入）。
     PatchService         确定性反向 patch 构建（Phase 13D）
     ValidationService    沙箱验证命令执行（Phase 13F）
     VerificationService  执行结果终审核验（Phase 13G）
+    PromotionService     审批 + 晋升（唯一真实仓库写路径，Phase 13J）
 """
 from src.services.change import ChangeService, ChangeContext
 from src.services.decision import DecisionService
@@ -25,6 +26,7 @@ from src.services.evidence import EvidenceService
 from src.services.graph_query import GraphQueryService
 from src.services.patch import PatchService
 from src.services.policy import PolicyService
+from src.services.promotion import PromotionService
 from src.services.resolution import ResolutionService, TargetContext
 from src.services.semantic import SemanticService
 from src.services.task_view import TaskViewService
@@ -37,5 +39,5 @@ __all__ = ["GraphQueryService", "ResolutionService", "TaskViewService",
            "ChangeService", "EvidenceService", "DecisionService",
            "PolicyService", "SemanticService", "WorkspaceService",
            "PatchService", "ValidationService", "SafeCommandRunner",
-           "VerificationService",
+           "VerificationService", "PromotionService",
            "TargetContext", "ChangeContext", "call_tool"]
