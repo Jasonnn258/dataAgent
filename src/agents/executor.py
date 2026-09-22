@@ -41,6 +41,7 @@ class ExecutionOutcome:
     verification: str = ""              # VERIFIED / PARTIAL / FAILED
     notes: list[str] = field(default_factory=list)
     attempt: object | None = None       # ExecutionAttempt（审计对象）
+    trace_id: str = ""                  # 全链执行树的根（13L）
 
     @property
     def ok(self) -> bool:
@@ -84,9 +85,36 @@ class MaintenanceExecutorAgent:
                 validation_commands: list[list[str]] | None = None,
                 affected_routes: list[str] | None = None,
                 scope=None) -> ExecutionOutcome:
-        """把仲裁后的 RollbackPlan 在沙箱里执行到 VERIFIED（或停车）。"""
-        self.broker.rec.tool(f"agent:{self.ROLE}:execute")
+        """把仲裁后的 RollbackPlan 在沙箱里执行到 VERIFIED（或停车）。
+
+        整条链包在一个 agent span 里（13L）：skill/policy/tool 事件全部
+        挂到这棵执行树上，attempt.trace_id 记根节点 id，run 目录落
+        trace.jsonl —— 谁、何时、以何身份、调了什么，整链可重建。
+        """
         task_id = task_id or "task"
+        span = getattr(self.broker.rec, "span", None)
+        if span is None:      # 纯 ToolRecorder：照常执行，只是没树
+            self.broker.rec.tool(f"agent:{self.ROLE}:execute")
+            return self._run_chain(rollback_plan, task_id,
+                                   validation_commands, affected_routes,
+                                   scope)
+        with span("agent", self.ROLE, "execute",
+                  task_id=task_id) as ev:
+            out = self._run_chain(rollback_plan, task_id,
+                                  validation_commands, affected_routes,
+                                  scope)
+            out.trace_id = ev.trace_id
+            ev.meta["execution_id"] = out.execution_id
+            ev.meta["stopped_at"] = out.stopped_at
+        # span 收口后绑定树根并落 trace.jsonl（此刻全链事件完整且根
+        # 事件的耗时/状态已定稿；只在首次绑定时写，重放不覆盖）
+        if out.attempt is not None and out.attempt.trace_id == "":
+            self.broker.bind_trace(out.attempt.execution_id, ev.trace_id)
+        return out
+
+    def _run_chain(self, rollback_plan, task_id, validation_commands,
+                   affected_routes, scope) -> ExecutionOutcome:
+        self.broker.rec.tool(f"agent:{self.ROLE}:execute")
         out = ExecutionOutcome(task_id=task_id)
         gates_ctx = {"rollback_symbols": [], "keep_symbols": [],
                      "task_id": task_id}   # legacy 必填（契约），gate 模式忽略

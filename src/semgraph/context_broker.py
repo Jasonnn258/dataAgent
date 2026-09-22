@@ -287,6 +287,10 @@ class ContextBroker:
     def get_execution(self, execution_id: str):
         return self._workspace_svc.get_execution(execution_id)
 
+    def bind_trace(self, execution_id: str, trace_id: str):
+        """13L：绑定执行树根并落 trace.jsonl（内省面，不算能力）。"""
+        return self._workspace_svc.bind_trace(execution_id, trace_id)
+
     def executions(self):
         return self._workspace_svc.executions()
 

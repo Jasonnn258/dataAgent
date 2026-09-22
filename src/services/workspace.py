@@ -128,11 +128,18 @@ class WorkspaceService:
             exclude.write_text(text.rstrip("\n") + "\n.dataagent/\n")
 
     def _dump_attempt(self, attempt: ExecutionAttempt) -> None:
-        """attempt.json 落盘（运行目录；每一步后都重写，崩溃也有现场）。"""
+        """attempt.json + trace.jsonl 落盘（每一步后都重写，崩溃也有现场）。"""
         run_dir = self.runs_root / attempt.execution_id
         run_dir.mkdir(parents=True, exist_ok=True)
         (run_dir / "attempt.json").write_text(
             attempt.to_json(), encoding="utf-8")
+        # 13L：执行树子树导出（agent span 根 → 全链事件，结构化事实，
+        # 构造上不含 CoT）。结构化记录器缺席就静默跳过。
+        trace_id = getattr(attempt, "trace_id", "")
+        dump = getattr(self.rec, "trace_jsonl", None)
+        if trace_id and callable(dump):
+            (run_dir / "trace.jsonl").write_text(
+                dump(trace_id), encoding="utf-8")
 
     # ------------------------------------------------------------ prepare
     def prepare(self, plan: ExecutionPlan) -> ExecutionAttempt:
@@ -217,6 +224,15 @@ class WorkspaceService:
         return attempt
 
     # ------------------------------------------------------------ 查询
+    def bind_trace(self, execution_id: str, trace_id: str) -> ExecutionAttempt:
+        """把执行树根绑到 attempt 并重落 attempt.json + trace.jsonl（13L）。
+
+        链尾调用：此刻 agent span 已收口，trace.jsonl 是完整的全链事件。
+        """
+        attempt = self.registry.attach(execution_id, trace_id=trace_id)
+        self._dump_attempt(attempt)
+        return attempt
+
     def get_execution(self, execution_id: str) -> ExecutionAttempt:
         return self.registry.get(execution_id)
 

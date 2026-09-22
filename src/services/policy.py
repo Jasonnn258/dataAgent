@@ -47,6 +47,13 @@ class PolicyService:
     def pre_execution_gate(self, plan, task_id: str = "") -> PolicyResult:
         """执行前门：计划本身的危险面（API/认证/同符号）。只裁决；
         服从 BLOCK 是 MaintenanceExecutorAgent 的契约。"""
+        span = getattr(self.broker.rec, "span", None)
+        if span is None:
+            return self._pre_gate(plan, task_id)
+        with span("policy", "ExecutionPolicyGate", "pre", task_id=task_id):
+            return self._pre_gate(plan, task_id)
+
+    def _pre_gate(self, plan, task_id: str) -> PolicyResult:
         from src.config import maintenance_policy, policy_version
         from src.maintenance.execution_policy import pre_execution_gate
         result = pre_execution_gate(plan, maintenance_policy())
@@ -64,6 +71,14 @@ class PolicyService:
 
     def post_execution_gate(self, attempt, task_id: str = "") -> PolicyResult:
         """执行后门：沙箱里实际发生的事（硬红线）+ 计划面复检。"""
+        span = getattr(self.broker.rec, "span", None)
+        if span is None:
+            return self._post_gate(attempt, task_id)
+        with span("policy", "ExecutionPolicyGate", "post",
+                  task_id=task_id or attempt.task_id):
+            return self._post_gate(attempt, task_id)
+
+    def _post_gate(self, attempt, task_id: str) -> PolicyResult:
         from src.config import maintenance_policy, policy_version
         from src.maintenance.execution_policy import post_execution_gate
         result = post_execution_gate(attempt, maintenance_policy())

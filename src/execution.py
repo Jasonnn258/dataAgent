@@ -127,6 +127,40 @@ class ExecutionRecorder(ToolRecorder):
     def events_of(self, layer: str) -> list[ExecutionEvent]:
         return [e for e in self.events if e.layer == layer]
 
+    def subtree(self, trace_id: str) -> list[ExecutionEvent]:
+        """以 trace_id 为根的子树事件（含自身），按发生顺序。
+
+        一次执行链的全部痕迹 = agent span 的子树 —— 13L 落档的就是它。
+        """
+        wanted = {trace_id}
+        out: list[ExecutionEvent] = []
+        for e in self.events:
+            if e.trace_id == trace_id or e.parent_trace_id in wanted:
+                wanted.add(e.trace_id)
+                out.append(e)
+        return out
+
+    @staticmethod
+    def event_json(e: ExecutionEvent) -> dict:
+        """事件 → 有界 dict（trace.jsonl 的一行）。
+
+        字段是结构化事实的固定集：没有入参载荷、没有模型输出、
+        更没有隐藏思维链 —— 构造上不存在放 CoT 的位置。
+        """
+        return {"trace_id": e.trace_id,
+                "parent": e.parent_trace_id, "task_id": e.task_id,
+                "layer": e.layer, "actor": e.actor, "action": e.action,
+                "status": e.status, "duration_ms": e.duration_ms,
+                "evidence_ids": list(e.evidence_ids),
+                "warnings": list(e.warnings), "meta": dict(e.meta)}
+
+    def trace_jsonl(self, trace_id: str) -> str:
+        """执行子树的 JSONL 文本（run 目录 trace.jsonl 的内容）。"""
+        import json
+        return "\n".join(
+            json.dumps(self.event_json(e), ensure_ascii=False)
+            for e in self.subtree(trace_id)) + "\n"
+
     def tree(self) -> dict:
         """按 parent 链重建嵌套树 {**event, children: [...]}。"""
         nodes = {e.trace_id: {"event": e, "children": []}
