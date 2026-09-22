@@ -27,7 +27,8 @@ from src.semgraph.task_view import TaskGraphView
 from src.services import (ChangeService, DecisionService, EvidenceService,
                           GraphQueryService, PatchService, PolicyService,
                           ResolutionService, SemanticService, TaskViewService,
-                          ValidationService, WorkspaceService)
+                          ValidationService, VerificationService,
+                          WorkspaceService)
 from src.services.change import ChangeContext
 from src.services.resolution import TargetContext
 
@@ -79,6 +80,7 @@ CAPABILITIES: dict[str, str] = {
     "build_rollback_patch":  "execution.build_patch",
     "apply_execution_patch": "execution.apply_patch",
     "validate_execution":    "execution.validate",
+    "verify_execution":      "execution.verify",
 }
 
 
@@ -122,6 +124,8 @@ class ContextBroker:
         self._patch_svc = PatchService(self)
         # 13F：沙箱验证命令（SafeCommandRunner：argv 白名单 + shell=False）
         self._validation_svc = ValidationService(self)
+        # 13G：执行结果终审（Verifier 只裁决，不修复）
+        self._verification_svc = VerificationService(self)
 
     def layer_active(self, name: str) -> bool:
         return name in self.layers
@@ -291,6 +295,12 @@ class ContextBroker:
         TEST_FAILED 终态。命令只来自 plan 或 repo 配置，绝不来自 LLM。
         """
         return self._validation_svc.run(attempt)
+
+    def verify_execution(self, attempt):
+        """终审（13G）：五面裁决 → VERIFIED / PARTIAL / FAILED。
+        PARTIAL 不推进状态（软面没齐不许往 promote 走）。
+        """
+        return self._verification_svc.verify(attempt)
 
     # ------------------------------------------------------------ 工具
     def node(self, node_id: str) -> Node | None:

@@ -191,6 +191,40 @@ class ValidationResult:
         return d
 
 
+# ---------------------------------------------------------------- 核验
+
+@dataclass
+class ExecutionVerification:
+    """执行核验的结构化裁决（13G；Verdict，不是日志）。
+
+    五个面 + overall：
+    - expected_change_pass：合同里"必须变"的都真变了（回退单元被反转）
+    - preservation_pass：合同里"绝不能变"的都原样（keep 侧无损）
+    - scope_pass：改动 ⊆ 计划（无越界文件/额外内容）
+    - tests_pass：验证命令全过且至少跑了一条
+    - evidence_pass：patch/证据/快照链完整可回看
+
+    overall：VERIFIED（全过）/ PARTIAL（硬面过、软面缺：没跑测试、
+    证据不全）/ FAILED（硬面破：forbidden 被动、越界、回退缺失）。
+    PARTIAL 不推进状态 —— 没 evidence/没测试就不许往 promote 走。
+    """
+    expected_change_pass: bool = False
+    preservation_pass: bool = False
+    scope_pass: bool = False
+    tests_pass: bool = False
+    evidence_pass: bool = False
+    overall: str = "FAILED"
+    checks: list[dict] = field(default_factory=list)   # 逐项明细
+
+    def to_dict(self) -> dict:
+        return {"expected_change_pass": self.expected_change_pass,
+                "preservation_pass": self.preservation_pass,
+                "scope_pass": self.scope_pass,
+                "tests_pass": self.tests_pass,
+                "evidence_pass": self.evidence_pass,
+                "overall": self.overall, "checks": self.checks}
+
+
 # ---------------------------------------------------------------- 尝试
 
 @dataclass
