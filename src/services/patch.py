@@ -213,3 +213,96 @@ class PatchService:
         ws._dump_attempt(attempt)
         self.rec.tool("patch:build")
         return attempt, artifact
+
+    # ------------------------------------------------------------ apply（13E）
+    def apply(self, attempt: ExecutionAttempt) -> ExecutionAttempt:
+        """把 proposed.patch 应用进沙箱 worktree 并留 actual.patch。
+
+        顺序即保证：apply --check（PATCH_BUILT→APPLY_CHECKED）→ apply
+        （→APPLIED_SANDBOX）→ git diff HEAD 存档 actual.patch → 与
+        proposed 做内容级对比；出现计划外修改 → VERIFICATION_FAILED
+        终态（这一步抓的是"git 干了计划之外的事"，不是测试成败）。
+        """
+        ws = self.broker._workspace_svc
+        if attempt.status != "PATCH_BUILT" or not attempt.patch_path:
+            raise DataAgentError(
+                f"apply_patch needs a PATCH_BUILT attempt with a patch, "
+                f"got {attempt.status}")
+        patch_path = Path(attempt.patch_path)
+        worktree = Path(attempt.workspace)
+
+        # ---- 1. 复核：应用前再 check 一次（构建与应用之间不留窗口）----
+        try:
+            ws.sandbox.run(["apply", "--check", str(patch_path)],
+                           cwd=worktree)
+        except GitError as e:
+            ws.registry.update_status(
+                attempt.execution_id, "CONFLICT",
+                note=f"apply --check failed: {e}"[:300])
+            ws._dump_attempt(ws.registry.get(attempt.execution_id))
+            return ws.registry.get(attempt.execution_id)
+        ws.registry.update_status(attempt.execution_id, "APPLY_CHECKED",
+                                  note="apply --check re-passed")
+
+        # ---- 2. 真正应用（只写沙箱）----
+        ws.sandbox.run(["apply", str(patch_path)], cwd=worktree)
+        ws.registry.update_status(attempt.execution_id, "APPLIED_SANDBOX",
+                                  note=f"applied {patch_path.name}")
+
+        # ---- 3. actual.patch = 沙箱当前状态 vs base_commit ----
+        actual = ws.sandbox.run(["diff", "--no-color", "HEAD"], cwd=worktree)
+        actual_path = patch_path.parent / "actual.patch"
+        actual_path.write_text(actual, encoding="utf-8")
+        attempt = ws.registry.attach(attempt.execution_id,
+                                     actual_patch_path=str(actual_path))
+
+        # ---- 4. 内容级对比：容许 hunk 位置偏移，不容许任何内容/文件越界 ----
+        problems = compare_patches(patch_path, actual_path)
+        if problems:
+            ws.registry.update_status(
+                attempt.execution_id, "VERIFICATION_FAILED",
+                note="out-of-plan change: " + "; ".join(problems)[:300])
+            ws._dump_attempt(ws.registry.get(attempt.execution_id))
+            return ws.registry.get(attempt.execution_id)
+
+        ws._dump_attempt(attempt)
+        self.rec.tool("patch:apply")
+        return attempt
+
+
+# ------------------------------------------------------------ 对比（纯函数）
+
+def _patch_signature(text: str) -> dict[str, list[tuple[str, str]]]:
+    """patch 文本 → {file: 排序后的变更行}。
+
+    只取变更行（+/-），且按 (tag, text) 排序成多重集 —— 丢上下文行、
+    hunk 位置与行序：上下文窗口会被计划外的后续 commit 合法地挪动；
+    行序在"反向 patch（+在前）"与"git diff（-在前）"之间本来就不一致。
+    真正要守住的是"每个文件改了哪些行、各多少条"。
+    """
+    from src.git_history.api import _parse_unified_diff
+    parsed = _parse_unified_diff(text)
+    sig: dict[str, list[tuple[str, str]]] = {}
+    for h in parsed["hunks"]:
+        sig.setdefault(h.file, []).extend(
+            ln for ln in h.lines if ln[0] in "+-")
+    return {f: sorted(lines) for f, lines in sig.items()}
+
+
+def compare_patches(proposed: Path, actual: Path) -> list[str]:
+    """actual 与 proposed 的内容级差异清单（空 = 没有计划外修改）。
+
+    文件集合与每文件的变更行多重集必须逐字一致：多一个文件、多一行
+    改动、少一段回退，都是计划外修改。
+    """
+    p_sig = _patch_signature(Path(proposed).read_text(encoding="utf-8"))
+    a_sig = _patch_signature(Path(actual).read_text(encoding="utf-8"))
+    problems: list[str] = []
+    for extra in sorted(set(a_sig) - set(p_sig)):
+        problems.append(f"file modified outside plan: {extra}")
+    for missing in sorted(set(p_sig) - set(a_sig)):
+        problems.append(f"planned change missing: {missing}")
+    for f in sorted(set(p_sig) & set(a_sig)):
+        if p_sig[f] != a_sig[f]:
+            problems.append(f"change content differs from plan: {f}")
+    return problems

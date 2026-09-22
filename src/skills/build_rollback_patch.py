@@ -21,7 +21,8 @@ class BuildRollbackPatchSkill(BaseSkill):
         description=("build the deterministic inverse patch for a PREPARED "
                      "execution (keep-side hunks never enter the patch)"),
         required_inputs=["execution"],
-        produced_outputs=["execution_id", "patch_path", "artifact", "status"],
+        produced_outputs=["execution_id", "patch_path", "artifact", "status",
+                          "execution"],
         allowed_capabilities=["execution.build_patch"],
         evidence_requirements="EXECUTION_PATCH evidence（sha256 身份证）",
         preconditions=["execution 状态 PREPARED（沙箱 worktree 已就位）",
@@ -54,7 +55,8 @@ class BuildRollbackPatchSkill(BaseSkill):
         out.data = {"execution_id": attempt.execution_id,
                     "patch_path": attempt.patch_path,
                     "artifact": artifact,
-                    "status": attempt.status}
+                    "status": attempt.status,
+                    "execution": attempt}
         return out
 
 

@@ -23,7 +23,7 @@ SKILL_NAMES = {"resolve_target", "build_task_view", "impact_analysis",
                "change_unit_analysis", "coupling_analysis", "safe_rollback",
                "evidence_verification", "policy_check",
                "build_execution_plan", "prepare_execution",
-               "build_rollback_patch"}
+               "build_rollback_patch", "apply_patch"}
 
 
 @pytest.fixture(scope="module")

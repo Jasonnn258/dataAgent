@@ -177,6 +177,7 @@ class ExecutionAttempt:
     status: str = ExecutionStatus.PLANNED.value
     workspace: str = ""                 # sandbox worktree 绝对路径
     patch_path: str = ""                # proposed.patch
+    actual_patch_path: str = ""         # actual.patch（沙箱 apply 后的真实 diff，13E）
     verified_patch_path: str = ""       # sandbox 验证通过的 patch（13J 用）
     reverse_patch_path: str = ""        # 显式撤销用（13J 生成）
     validation_results: list[dict] = field(default_factory=list)   # 13F 填充

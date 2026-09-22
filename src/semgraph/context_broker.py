@@ -77,6 +77,7 @@ CAPABILITIES: dict[str, str] = {
     "execution_snapshot":    "execution.snapshot",
     "prepare_execution":     "execution.prepare",
     "build_rollback_patch":  "execution.build_patch",
+    "apply_execution_patch": "execution.apply_patch",
 }
 
 
@@ -273,6 +274,14 @@ class ContextBroker:
         keep 单元构造性排除在 PatchService.build_inverse_patch 里。
         """
         return self._patch_svc.build(attempt)
+
+    def apply_execution_patch(self, attempt):
+        """把 proposed.patch 应用进沙箱并做计划外修改检查（13E）。
+
+        APPLY_CHECKED → APPLIED_SANDBOX；任何计划外修改 →
+        VERIFICATION_FAILED 终态。绝不在源仓库上 apply。
+        """
+        return self._patch_svc.apply(attempt)
 
     # ------------------------------------------------------------ 工具
     def node(self, node_id: str) -> Node | None:
