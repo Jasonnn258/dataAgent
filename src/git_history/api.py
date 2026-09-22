@@ -109,6 +109,11 @@ class GitAPI:
     def head(self) -> str:
         return self._run(["rev-parse", "HEAD"]).strip()
 
+    def status_porcelain(self) -> list[str]:
+        """`git status --porcelain` 的有界行列表（stale 检测用，只读）。"""
+        out = self._run(["status", "--porcelain"])
+        return [ln for ln in out.splitlines() if ln.strip()][:200]
+
     def resolve(self, ref: str) -> str:
         return self._run(["rev-parse", ref + "^{commit}"]).strip()
 

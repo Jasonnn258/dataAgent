@@ -26,7 +26,7 @@ from src.semgraph.task_view import TaskGraphView
 # 11D：服务层（TargetContext/ChangeContext 自服务迁入，这里再导出）
 from src.services import (ChangeService, DecisionService, EvidenceService,
                           GraphQueryService, PolicyService, ResolutionService,
-                          SemanticService, TaskViewService)
+                          SemanticService, TaskViewService, WorkspaceService)
 from src.services.change import ChangeContext
 from src.services.resolution import TargetContext
 
@@ -71,6 +71,9 @@ CAPABILITIES: dict[str, str] = {
     # semantic.*：语义门面（LLM 白名单在 skill spec 侧）
     "map_semantic_candidates": "semantic.map_candidates",
     "build_query_terms":     "semantic.query_terms",
+    # execution.*：执行层（Phase 13）—— 快照是只读指纹，
+    # prepare 起的一切写动作只落在沙箱 worktree
+    "execution_snapshot":    "execution.snapshot",
 }
 
 
@@ -108,6 +111,8 @@ class ContextBroker:
         self._decision_svc = DecisionService(self)
         self._policy_svc = PolicyService(self)
         self._semantic_svc = SemanticService(self)
+        # 13B：执行层（快照只读；prepare/沙箱写动作见 WorkspaceService）
+        self._workspace_svc = WorkspaceService(self)
 
     def layer_active(self, name: str) -> bool:
         return name in self.layers
@@ -236,6 +241,11 @@ class ContextBroker:
     def build_query_terms(self, query: str, feature_name: str) -> list[str]:
         """变更分析词表（query 词元 + feature 别名）。"""
         return self._semantic_svc.query_terms(query, feature_name)
+
+    # ------------------------------------------------------------ 执行层（13B）
+    def execution_snapshot(self, files: list[str] | None = None):
+        """源仓库当前状态指纹（只读；stale 检测的基准）。"""
+        return self._workspace_svc.snapshot(files)
 
     # ------------------------------------------------------------ 工具
     def node(self, node_id: str) -> Node | None:

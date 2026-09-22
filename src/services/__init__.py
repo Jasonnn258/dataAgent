@@ -14,6 +14,7 @@ src/change_units、semantica —— 只在图构建期经 enrich 进入）。
     DecisionService      决策记忆（记录 + 先例查询）
     PolicyService        版本化规则门 + 落档
     SemanticService      语义播种 + 查询词表门面
+    WorkspaceService     仓库状态指纹 + 沙箱工作区（Phase 13B/13C）
 """
 from src.services.change import ChangeService, ChangeContext
 from src.services.decision import DecisionService
@@ -24,8 +25,9 @@ from src.services.resolution import ResolutionService, TargetContext
 from src.services.semantic import SemanticService
 from src.services.task_view import TaskViewService
 from src.services.tooling import call_tool
+from src.services.workspace import WorkspaceService
 
 __all__ = ["GraphQueryService", "ResolutionService", "TaskViewService",
            "ChangeService", "EvidenceService", "DecisionService",
-           "PolicyService", "SemanticService",
+           "PolicyService", "SemanticService", "WorkspaceService",
            "TargetContext", "ChangeContext", "call_tool"]
