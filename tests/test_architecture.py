@@ -137,11 +137,15 @@ def test_every_role_agent_declares_real_skills():
             unknown = [n for n in names if n not in known]
             assert not unknown, f"{cls}.SKILLS 引用未注册 skill: {unknown}"
             declared[cls] = names
-    # 五个执行 agent + 两个 verifier 都在委托（Orchestrator 无 ROLE，
-    # 它是组合根，不自带 skill）
-    assert len(declared) == 6
+    # 五个分析 agent + 两个 verifier + 执行 agent（13I）都在委托
+    #（Orchestrator 无 ROLE，它是组合根，不自带 skill）
+    assert len(declared) == 7
     assert declared["RepositoryNavigator"] == ["resolve_target"]
     assert declared["RollbackPlanner"] == ["safe_rollback"]
+    assert declared["MaintenanceExecutorAgent"] == [
+        "build_execution_plan", "prepare_execution", "build_rollback_patch",
+        "apply_patch", "validate_execution", "verify_execution",
+        "policy_check"]
 
 
 # ================================================================ 4. capability 声明真实存在
