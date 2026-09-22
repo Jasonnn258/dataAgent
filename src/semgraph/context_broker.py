@@ -27,7 +27,7 @@ from src.semgraph.task_view import TaskGraphView
 from src.services import (ChangeService, DecisionService, EvidenceService,
                           GraphQueryService, PatchService, PolicyService,
                           ResolutionService, SemanticService, TaskViewService,
-                          WorkspaceService)
+                          ValidationService, WorkspaceService)
 from src.services.change import ChangeContext
 from src.services.resolution import TargetContext
 
@@ -78,6 +78,7 @@ CAPABILITIES: dict[str, str] = {
     "prepare_execution":     "execution.prepare",
     "build_rollback_patch":  "execution.build_patch",
     "apply_execution_patch": "execution.apply_patch",
+    "validate_execution":    "execution.validate",
 }
 
 
@@ -119,6 +120,8 @@ class ContextBroker:
         self._workspace_svc = WorkspaceService(self)
         # 13D：确定性反向 patch 构建（惰性建图缓存，不占 import 期）
         self._patch_svc = PatchService(self)
+        # 13F：沙箱验证命令（SafeCommandRunner：argv 白名单 + shell=False）
+        self._validation_svc = ValidationService(self)
 
     def layer_active(self, name: str) -> bool:
         return name in self.layers
@@ -282,6 +285,12 @@ class ContextBroker:
         VERIFICATION_FAILED 终态。绝不在源仓库上 apply。
         """
         return self._patch_svc.apply(attempt)
+
+    def validate_execution(self, attempt):
+        """在沙箱里跑验证命令（13F）。全过 → VALIDATED；任何失败 →
+        TEST_FAILED 终态。命令只来自 plan 或 repo 配置，绝不来自 LLM。
+        """
+        return self._validation_svc.run(attempt)
 
     # ------------------------------------------------------------ 工具
     def node(self, node_id: str) -> Node | None:

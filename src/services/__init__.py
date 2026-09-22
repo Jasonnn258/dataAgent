@@ -16,6 +16,7 @@ src/change_units、semantica —— 只在图构建期经 enrich 进入）。
     SemanticService      语义播种 + 查询词表门面
     WorkspaceService     仓库状态指纹 + 沙箱工作区（Phase 13B/13C）
     PatchService         确定性反向 patch 构建（Phase 13D）
+    ValidationService    沙箱验证命令执行（Phase 13F）
 """
 from src.services.change import ChangeService, ChangeContext
 from src.services.decision import DecisionService
@@ -27,10 +28,11 @@ from src.services.resolution import ResolutionService, TargetContext
 from src.services.semantic import SemanticService
 from src.services.task_view import TaskViewService
 from src.services.tooling import call_tool
+from src.services.validation import SafeCommandRunner, ValidationService
 from src.services.workspace import WorkspaceService
 
 __all__ = ["GraphQueryService", "ResolutionService", "TaskViewService",
            "ChangeService", "EvidenceService", "DecisionService",
            "PolicyService", "SemanticService", "WorkspaceService",
-           "PatchService",
+           "PatchService", "ValidationService", "SafeCommandRunner",
            "TargetContext", "ChangeContext", "call_tool"]

@@ -41,4 +41,5 @@ def default_registry() -> dict[str, BaseSkill]:
     import src.skills.prepare_execution       # noqa: F401
     import src.skills.build_rollback_patch    # noqa: F401
     import src.skills.apply_patch             # noqa: F401
+    import src.skills.validate_execution      # noqa: F401
     return dict(SKILL_REGISTRY)

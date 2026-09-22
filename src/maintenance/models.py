@@ -166,6 +166,31 @@ class PatchArtifact:
                 "sha256": self.sha256[:12], "hunks_total": self.hunks_total}
 
 
+# ---------------------------------------------------------------- 验证
+
+@dataclass
+class ValidationResult:
+    """一条验证命令的结构化结果（13F；不是 bool）。
+
+    status ∈ PASSED | FAILED | TIMEOUT | ERROR | BLOCKED：
+    - BLOCKED 是可执行文件策略拒绝（没跑过，exit_code 为 None）
+    - TIMEOUT/ERROR 是运行环境问题，与 FAILED（命令自己判失败）分开
+    """
+    command: list[str] = field(default_factory=list)   # argv 原样
+    exit_code: int | None = None
+    duration: float = 0.0                              # 秒
+    stdout_summary: str = ""                           # 有界摘要
+    stderr_summary: str = ""
+    status: str = "NOT_RUN"
+
+    def to_dict(self) -> dict:
+        d = asdict(self)
+        d["duration"] = round(self.duration, 3)
+        d["stdout_summary"] = self.stdout_summary[:2000]
+        d["stderr_summary"] = self.stderr_summary[:2000]
+        return d
+
+
 # ---------------------------------------------------------------- 尝试
 
 @dataclass
