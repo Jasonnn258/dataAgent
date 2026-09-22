@@ -24,7 +24,8 @@ SRC = ROOT / "src"
 # 物理工具层的绝对模块名（Agent/Skill 一律禁止）
 FORBIDDEN_MODULES = {"subprocess"}
 FORBIDDEN_PREFIXES = ("src.git_history", "src.search", "src.structural",
-                      "src.change_units", "semantica")
+                      "src.change_units", "semantica",
+                      "src.maintenance.sandbox_git")
 
 
 def iter_py(package: str):
@@ -157,6 +158,21 @@ def test_skill_capabilities_resolve_to_broker_methods():
             else:
                 assert cap in provided, \
                     f"{name} 声明了 broker 不提供的能力 {cap}"
+
+
+# ================================================================ 4b. 沙箱 git 出口唯一（13C）
+def test_sandbox_git_only_via_workspace_service():
+    """src.maintenance.sandbox_git 是唯一能跑"写"git 的物理工具，
+    全 src/ 只允许 src/services/workspace.py 与 src/maintenance/ 引用。"""
+    offenders = []
+    for path in SRC.rglob("*.py"):
+        rel = path.relative_to(SRC).as_posix()
+        if rel.startswith(("services/", "maintenance/")):
+            continue
+        if "src.maintenance.sandbox_git" in imported_modules(path):
+            offenders.append(rel)
+    assert not offenders, \
+        f"沙箱 git 只能经 WorkspaceService/maintenance 包使用: {offenders}"
 
 
 # ================================================================ 5. LLM 白名单（11H 前置）

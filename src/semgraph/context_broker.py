@@ -74,6 +74,7 @@ CAPABILITIES: dict[str, str] = {
     # execution.*：执行层（Phase 13）—— 快照是只读指纹，
     # prepare 起的一切写动作只落在沙箱 worktree
     "execution_snapshot":    "execution.snapshot",
+    "prepare_execution":     "execution.prepare",
 }
 
 
@@ -246,6 +247,20 @@ class ContextBroker:
     def execution_snapshot(self, files: list[str] | None = None):
         """源仓库当前状态指纹（只读；stale 检测的基准）。"""
         return self._workspace_svc.snapshot(files)
+
+    def prepare_execution(self, plan):
+        """为 ExecutionPlan 建沙箱 worktree（13C）。
+
+        源仓库零修改（.git/worktrees 元数据除外）；计划过期 →
+        STALE_PLAN 终态。get_execution/executions 是自由内省。
+        """
+        return self._workspace_svc.prepare(plan)
+
+    def get_execution(self, execution_id: str):
+        return self._workspace_svc.get_execution(execution_id)
+
+    def executions(self):
+        return self._workspace_svc.executions()
 
     # ------------------------------------------------------------ 工具
     def node(self, node_id: str) -> Node | None:

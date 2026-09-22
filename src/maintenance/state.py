@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import time
+from secrets import token_hex
 
 from src.errors import DataAgentError
 from src.maintenance.models import ExecutionAttempt, ExecutionPlan, ExecutionStatus
@@ -82,7 +83,9 @@ class AttemptRegistry:
     def _next_id(self, plan: ExecutionPlan) -> str:
         n = len(self._attempts) + 1
         base = plan.base_commit[:8] or "nocommit"
-        return f"exec-{n:04d}-{base}"
+        # 随机后缀：不同进程/broker 对同一仓库的尝试绝不共用 run 目录
+        # （run 目录名就是 execution_id，撞名会踩到别人的现场）
+        return f"exec-{n:04d}-{base}-{token_hex(3)}"
 
     def get(self, execution_id: str) -> ExecutionAttempt:
         attempt = self._attempts.get(execution_id)

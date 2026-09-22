@@ -38,4 +38,5 @@ def default_registry() -> dict[str, BaseSkill]:
     import src.skills.evidence_verification   # noqa: F401
     import src.skills.policy_check            # noqa: F401
     import src.skills.build_execution_plan    # noqa: F401
+    import src.skills.prepare_execution       # noqa: F401
     return dict(SKILL_REGISTRY)
