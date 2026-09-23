@@ -1,0 +1,221 @@
+{
+  "rows": [
+    {
+      "skill": "resolve_target",
+      "status": "success",
+      "latency_ms": 3.527,
+      "broker_calls": 4,
+      "physical_tool_calls": 7,
+      "llm_calls": 0,
+      "evidence_count": 1,
+      "capabilities_used": [
+        "evidence.add",
+        "evidence.finding.add",
+        "semantic.map_candidates",
+        "semantic.query_terms"
+      ],
+      "warnings": 0,
+      "error": "",
+      "metrics": {
+        "target_correct": 1
+      }
+    },
+    {
+      "skill": "resolve_target",
+      "status": "success",
+      "latency_ms": 0.349,
+      "broker_calls": 4,
+      "physical_tool_calls": 0,
+      "llm_calls": 0,
+      "evidence_count": 1,
+      "capabilities_used": [
+        "evidence.add",
+        "evidence.finding.add",
+        "semantic.map_candidates",
+        "semantic.query_terms"
+      ],
+      "warnings": 0,
+      "error": "",
+      "metrics": {
+        "target_correct": 1
+      }
+    },
+    {
+      "skill": "change_unit_analysis",
+      "status": "success",
+      "latency_ms": 0.315,
+      "broker_calls": 10,
+      "physical_tool_calls": 0,
+      "llm_calls": 0,
+      "evidence_count": 3,
+      "capabilities_used": [
+        "change.find_units",
+        "evidence.add",
+        "evidence.finding.add",
+        "repository.node"
+      ],
+      "warnings": 0,
+      "error": "",
+      "metrics": {
+        "unit_match_correct": 1,
+        "n_matches": 3
+      }
+    },
+    {
+      "skill": "change_unit_analysis",
+      "status": "success",
+      "latency_ms": 0.168,
+      "broker_calls": 7,
+      "physical_tool_calls": 0,
+      "llm_calls": 0,
+      "evidence_count": 2,
+      "capabilities_used": [
+        "change.find_units",
+        "evidence.add",
+        "evidence.finding.add",
+        "repository.node"
+      ],
+      "warnings": 0,
+      "error": "",
+      "metrics": {
+        "unit_match_correct": 1,
+        "n_matches": 2
+      }
+    },
+    {
+      "skill": "build_task_view",
+      "status": "success",
+      "latency_ms": 0.046,
+      "broker_calls": 1,
+      "physical_tool_calls": 0,
+      "llm_calls": 0,
+      "evidence_count": 0,
+      "capabilities_used": [
+        "graph.create_task_view"
+      ],
+      "warnings": 0,
+      "error": "",
+      "metrics": {
+        "task_graph_nodes": 5
+      }
+    },
+    {
+      "skill": "impact_analysis",
+      "status": "success",
+      "latency_ms": 0.151,
+      "broker_calls": 4,
+      "physical_tool_calls": 0,
+      "llm_calls": 0,
+      "evidence_count": 1,
+      "capabilities_used": [
+        "evidence.finding.add",
+        "graph.expand_task_view",
+        "graph.get_task_view",
+        "repository.get_context"
+      ],
+      "warnings": 0,
+      "error": "",
+      "metrics": {
+        "routes_precision": 1.0,
+        "routes_recall": 1.0,
+        "callers_found": 1
+      }
+    },
+    {
+      "skill": "coupling_analysis",
+      "status": "success",
+      "latency_ms": 0.021,
+      "broker_calls": 1,
+      "physical_tool_calls": 0,
+      "llm_calls": 0,
+      "evidence_count": 0,
+      "capabilities_used": [
+        "change.get_couplings"
+      ],
+      "warnings": 0,
+      "error": "",
+      "metrics": {
+        "precision": 1.0,
+        "recall": 1.0
+      }
+    },
+    {
+      "skill": "evidence_verification",
+      "status": "success",
+      "latency_ms": 0.082,
+      "broker_calls": 12,
+      "physical_tool_calls": 0,
+      "llm_calls": 0,
+      "evidence_count": 0,
+      "capabilities_used": [
+        "evidence.finding.set_status",
+        "evidence.get",
+        "evidence.query"
+      ],
+      "warnings": 0,
+      "error": "",
+      "metrics": {
+        "supported_fraction": 1.0,
+        "n_verdicts": 3
+      }
+    },
+    {
+      "skill": "safe_rollback",
+      "status": "success",
+      "latency_ms": 1.905,
+      "broker_calls": 9,
+      "physical_tool_calls": 0,
+      "llm_calls": 0,
+      "evidence_count": 2,
+      "capabilities_used": [
+        "change.get_couplings",
+        "decision.record",
+        "evidence.query",
+        "policy.gate",
+        "repository.node"
+      ],
+      "warnings": 0,
+      "error": "",
+      "metrics": {
+        "rollback_precision": 1.0,
+        "preservation_rate": 1,
+        "collateral_damage": 0
+      }
+    },
+    {
+      "skill": "policy_check",
+      "status": "success",
+      "latency_ms": 0.067,
+      "broker_calls": 2,
+      "physical_tool_calls": 0,
+      "llm_calls": 0,
+      "evidence_count": 0,
+      "capabilities_used": [
+        "evidence.query",
+        "policy.gate"
+      ],
+      "warnings": 0,
+      "error": "",
+      "metrics": {
+        "action_correct": 1,
+        "action": "HUMAN_REVIEW"
+      }
+    }
+  ],
+  "summary": {
+    "skills_run": 10,
+    "failed": 0,
+    "partial": 0,
+    "llm_calls_total": 0,
+    "evidence_total": 10,
+    "recorder_summary": {
+      "events": 55,
+      "by_layer": {
+        "tool": 43,
+        "skill": 10,
+        "policy": 2
+      },
+      "failed": 0
+    }
+  }
+}

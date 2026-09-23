@@ -1,0 +1,12 @@
+level | nav  | problem | keep | policy       | verdicts | verified | findings | evidence | view_nodes | report_chars | tool_calls | error                                                                    
+------+------+---------+------+--------------+----------+----------+----------+----------+------------+--------------+------------+--------------------------------------------------------------------------
+G0    | fail | 0       | 0    | -            | 0        | 0        | 0        | 0        | 0          | 0            | 6          | DataAgentError: cannot resolve target from query: '登录逻辑改坏了，帮我找出问题修改，准备回退'
+G1    | ok   | 0       | 0    | -            | 0        | 0        | 3        | 3        | 0          | 534          | 20         |                                                                          
+G2    | ok   | 1       | 1    | ungated      | 0        | 0        | 7        | 17       | 0          | 742          | 52         |                                                                          
+G3    | ok   | 1       | 1    | ungated      | 0        | 0        | 7        | 17       | 23         | 810          | 52         |                                                                          
+G4    | ok   | 1       | 1    | HUMAN_REVIEW | 9        | 5        | 7        | 17       | 23         | 1282         | 80         |                                                                          
+
+Q1 semantic needed for fuzzy entry:       G0 nav=fail -> G1 nav=ok
+Q2 change layer needed for unit split:    G1 problem/keep=0/0 -> G2 1/1
+Q3 task view bounds context:              G2 view_nodes=0 G3 view_nodes=23 (report 742 vs 810 chars)
+Q4 evidence/decision make it verifiable: G3 verdicts=0 policy=ungated -> G4 verdicts=9 verified=5 policy=HUMAN_REVIEW

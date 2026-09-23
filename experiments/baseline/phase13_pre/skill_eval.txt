@@ -1,0 +1,26 @@
+skill                 | status  | latency_ms | broker_calls | physical_tool_calls | llm_calls | evidence_count
+----------------------+---------+------------+--------------+---------------------+-----------+---------------
+resolve_target        | success | 3.045      | 4            | 7                   | 0         | 1             
+    metrics: {"target_correct": 1}
+resolve_target        | success | 0.35       | 4            | 0                   | 0         | 1             
+    metrics: {"target_correct": 1}
+change_unit_analysis  | success | 0.326      | 10           | 0                   | 0         | 3             
+    metrics: {"unit_match_correct": 1, "n_matches": 3}
+change_unit_analysis  | success | 0.169      | 7            | 0                   | 0         | 2             
+    metrics: {"unit_match_correct": 1, "n_matches": 2}
+build_task_view       | success | 0.048      | 1            | 0                   | 0         | 0             
+    metrics: {"task_graph_nodes": 5}
+impact_analysis       | success | 0.144      | 4            | 0                   | 0         | 1             
+    metrics: {"routes_precision": 1.0, "routes_recall": 1.0, "callers_found": 1}
+coupling_analysis     | success | 0.022      | 1            | 0                   | 0         | 0             
+    metrics: {"precision": 1.0, "recall": 1.0}
+evidence_verification | success | 0.077      | 12           | 0                   | 0         | 0             
+    metrics: {"supported_fraction": 1.0, "n_verdicts": 3}
+safe_rollback         | success | 1.764      | 9            | 0                   | 0         | 2             
+    metrics: {"rollback_precision": 1.0, "preservation_rate": 1, "collateral_damage": 0}
+policy_check          | success | 0.071      | 2            | 0                   | 0         | 0             
+    metrics: {"action_correct": 1, "action": "HUMAN_REVIEW"}
+
+summary: {"skills_run": 10, "failed": 0, "partial": 0, "llm_calls_total": 0, "evidence_total": 10, "recorder_summary": {"events": 55, "by_layer": {"tool": 43, "skill": 10, "policy": 2}, "failed": 0}}
+
+wrote /workspace/yjx/workspace/dataAgent/outputs/skill_eval.json
