@@ -24,6 +24,17 @@ class SemanticService:
             self._mapper.seed_deterministic()
         return self._mapper
 
+    def seed_public_symbols(self) -> int:
+        """通用 feature 播种（12B 真实 repo 实验路径专用）。
+
+        幂等：先照常懒构造 + Next.js 形状播种，再补源码目录符号。
+        fixture 路径不调用 —— 保基线零漂移。返回新建 feature 数。
+        """
+        mapper = self.mapper()
+        if mapper is None:
+            return 0
+        return len(mapper.seed_public_symbols())
+
     def map_candidates_result(self, query: str, llm=None) -> "ToolResult":
         """模糊 query → feature 候选，统一 ToolResult 形态（11E）。
 

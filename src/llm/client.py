@@ -21,6 +21,9 @@ class LLMClient:
     def __init__(self, cfg: LLMConfig):
         self.cfg = cfg
         self._client = None
+        # 12B：用量累计（llm_calls/prompt/completion tokens 实验指标）。
+        # 只在配置了 LLM 的运行里增长 —— fixture 无 LLM，零漂移
+        self.usage = {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0}
         if cfg.available:
             try:
                 from openai import OpenAI
@@ -51,6 +54,11 @@ class LLMClient:
             raw = resp.choices[0].message.content or "{}"
         except Exception as e:
             raise LLMError(f"LLM call failed: {type(e).__name__}: {e}") from e
+        u = getattr(resp, "usage", None)
+        if u is not None:  # 端点没回 usage 时不虚造
+            self.usage["calls"] += 1
+            self.usage["prompt_tokens"] += getattr(u, "prompt_tokens", 0) or 0
+            self.usage["completion_tokens"] += getattr(u, "completion_tokens", 0) or 0
         return self._parse_json(raw)
 
     @staticmethod

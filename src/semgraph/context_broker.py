@@ -267,6 +267,12 @@ class ContextBroker:
         """模糊 query → feature 候选（agent/skill 不再自己构造 mapper）。"""
         return self._semantic_svc.map_candidates(query, llm=llm)
 
+    def seed_public_symbols(self) -> int:
+        """通用 feature 播种（12B 真实 repo 实验路径专用；不进
+        CAPABILITIES —— 这是实验配置动作，不是 skill 能力）。幂等，
+        返回新建 feature 数。"""
+        return self._semantic_svc.seed_public_symbols()
+
     def build_query_terms(self, query: str, feature_name: str) -> list[str]:
         """变更分析词表（query 词元 + feature 别名）。"""
         return self._semantic_svc.query_terms(query, feature_name)

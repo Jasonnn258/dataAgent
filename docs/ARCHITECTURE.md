@@ -1,6 +1,6 @@
 # dataAgent 整体架构与函数手册
 
-> 更新：2026-09-23（Phase 12A + 13 完结后）。本文覆盖 `src/` 主要模块与
+> 更新：2026-09-23（Phase 12A + 13 + 12B 完结后）。本文覆盖 `src/` 主要模块与
 > `experiments/` 实验入口，逐函数给出一句话作用。代码是唯一真源，本文与代码
 > 不一致时以代码为准。
 
@@ -389,6 +389,7 @@ query="登录改坏了，回退但保留同 commit 的系统标题"
 | `_camel(*parts)` | 词段 → CamelCase 名 |
 | `SemanticMapper` | 构建并查询语义层 |
 | ┈ `seed_deterministic()` | 规则种子：route/component/根 layout → Feature（是事实，带 provenance） |
+| ┈ `seed_public_symbols()` | 12B 通用种子：源码目录（source/src/lib）符号 → Feature；Next.js 形状在真实库上词表为空的结构性补救，仅真实 repo 实验路径调用（保基线零漂移） |
 | ┈ `_seed_feature(fid, name, ...)` | 单个 feature 落图 + IMPLEMENTS 边 + 证据 |
 | ┈ `map_query(query, llm)` | query → 候选：词面 → 中文别名 → 可选 LLM（只挑已有名） |
 | ┈ `_llm_map(query, llm)` | 经 SemanticReasoningAdapter 挑 feature，包装成 candidate 级证据 |
@@ -520,6 +521,7 @@ query="登录改坏了，回退但保留同 commit 的系统标题"
 | 函数/类 | 作用 |
 |---|---|
 | `SemanticService.mapper()` | SemanticMapper 懒构造 + 确定性播种（语义层关→None） |
+| `SemanticService.seed_public_symbols()` | 12B 通用播种门面（幂等；broker.seed_public_symbols 同名转发，不进 CAPABILITIES —— 实验配置动作不是 skill 能力） |
 | `map_candidates_result(query, llm)` | ToolResult 形态的候选查询（LLM 缺席=degraded 留痕） |
 | `map_candidates(query, llm)` | 上面的人类友好形态 |
 | `query_terms(query, feature_name)` | 变更分析词表 |
@@ -580,7 +582,7 @@ query="登录改坏了，回退但保留同 commit 的系统标题"
 
 | 类/函数 | 作用 |
 |---|---|
-| `LLMClient.__init__(cfg)` | OpenAI 兼容客户端（未配置=不可用；配置了但初始化失败=LLMError） |
+| `LLMClient.__init__(cfg)` | OpenAI 兼容客户端（未配置=不可用；配置了但初始化失败=LLMError）；`usage` 字典累计端点回执的 token 用量（12B 实验指标，缺回执不虚造） |
 | `LLMClient.chat_json(system, user)` | 单次 JSON 模式调用（截断到上下文上限；解析容错 ```json 围栏） |
 | `SemanticReasoningAdapter.map_features(features, query)` | query → feature 候选；幻觉 id 直接丢弃（不变量：不创造不存在的 feature） |
 | `SemanticReasoningAdapter.label_change_unit(...)` | 变更单元语义标签（预留，12C 接线）；白名单外归 other |
@@ -619,6 +621,8 @@ query="登录改坏了，回退但保留同 commit 的系统标题"
 | `real_repo/execution_bench.ExecutionBench.run_task(task, oracle)` | 克隆副本上跑完整执行链（沙箱事实测量；oracle=True 跳过分析直喂 gold 单元） |
 | `real_repo/evaluator.score_execution(task, raw)` | 执行环评分：worktree 实际 diff 文件面 vs gold（贴出来才算，计划说了不算） |
 | `real_repo/report.summarize` / `write_markdown` / `write_jsonl` | JSONL 原始 + Markdown 汇总（失败案例单列 + 执行环两段：analysis/oracle） |
+| `real_repo/semantic_ablation.SemanticAblation` | 12B 消融：raw（12A 原状）/ d0（通用播种+词面）/ d1（+LLM 挑选，幻觉被图验证丢弃）三臂 resolve_target 对照 |
+| `real_repo/semantic_ablation.score_rows` | 指标：target_recall@1/@3、feature_mapping_accuracy、unresolved_rate、llm 用量（calls/tokens） |
 
 ### 4.16 src/maintenance/ — Phase 13 执行环（沙箱 + 晋升）
 

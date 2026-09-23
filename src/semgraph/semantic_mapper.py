@@ -87,6 +87,38 @@ class SemanticMapper:
                     rule="seed:root-layout app/layout.tsx", kind="Feature")
         return created
 
+    def seed_public_symbols(self) -> list[Node]:
+        """通用 feature 播种（Phase 12B）：源码目录符号 → Feature。
+
+        route/component 播种是 Next.js 形状专用 —— 12A 实测真实库上
+        FEATURE=0（chalk/express 无路由无组件），这是语义候选全灭的
+        结构性根因。本规则与仓库形状无关：
+
+          源码目录（首段路径 ∈ {source, src, lib}）里每个符号节点
+          → 一个同名 Feature（IMPLEMENTS → sym 节点）
+
+        全程确定性事实（符号定义在图里，可图验证），不依赖 ESM
+        `exported` 旗标（default export 不设旗、CJS 全 False，三 repo
+        实测均不可用）。只被真实 repo 实验路径调用；fixture 路径
+        不调 —— 保 G 消融/skill_eval 基线零漂移。幂等。
+        """
+        created: list[Node] = []
+        for nt in (NodeType.FUNCTION, NodeType.METHOD, NodeType.CLASS,
+                   NodeType.COMPONENT, NodeType.VARIABLE):
+            for sym in self.g.nodes_of_type(nt):
+                name = sym.props.get("name", "")
+                path = sym.props.get("file", "")
+                if not name or not path:
+                    continue
+                first = path.split("/")[0]
+                if first not in ("source", "src", "lib"):
+                    continue
+                created += self._seed_feature(
+                    f"feature:{name}", name, implements=sym.id,
+                    rule=f"seed:source-symbol {path}::{name}",
+                    kind="Feature")
+        return created
+
     def _seed_feature(self, fid: str, name: str, implements: str,
                       rule: str, kind: str) -> list[Node]:
         existing = self.g.node(fid)
@@ -172,9 +204,12 @@ class SemanticMapper:
         candidate 级证据；LLM 调用单独成层（EventLayer.LLM）。
         """
         from src.llm.semantic_adapter import SemanticReasoningAdapter
+        # 上限 120（12B）：真实 repo 通用播种后符号级 feature 可达
+        # ~100；名字短，120 条仍在安全 prompt 长度内。fixture 不足 40，
+        # 提高上限对基线零影响
         feats = [{"feature_id": f.id, "name": f.props.get("name", ""),
                   "seeded_by": f.props.get("seeded_by", "")}
-                 for f in self.g.nodes_of_type(NodeType.FEATURE)][:40]
+                 for f in self.g.nodes_of_type(NodeType.FEATURE)][:120]
         if not feats:
             return []
         adapter = SemanticReasoningAdapter(llm)
