@@ -22,6 +22,7 @@ src/maintenance/ 引用 —— tests/test_architecture.py 守着这条线。
 """
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -30,13 +31,18 @@ from src.errors import GitError
 # 每个子命令允许的旗标集合（不在集合里的旗标一律拒绝）
 _FLAGS: dict[str, set[str]] = {
     "worktree": {"add", "remove", "prune", "list", "--detach", "--force"},
-    "apply":    {"--check", "-R"},
+    "apply":    {"--check", "-R", "--cached"},
     "diff":     {"--stat", "--name-only", "--no-color", "HEAD"},
     "status":   {"--porcelain"},
     "rev-parse": {"HEAD"},
+    # 13E 内容级核对：物化期望内容（只读源仓库对象 + 写临时 index）
+    "read-tree": set(),
+    "ls-files":  {"-s"},
+    "hash-object": set(),
 }
 # 这些子命令的 cwd 必须落在已注册的沙箱 worktree 里（防逃逸）
-_SANDBOX_ONLY = {"apply", "diff", "status"}
+_SANDBOX_ONLY = {"apply", "diff", "status", "read-tree", "ls-files",
+                 "hash-object"}
 # 这些子命令的 cwd 必须是源仓库根本身
 _REPO_ONLY = {"worktree"}
 
@@ -61,7 +67,8 @@ class SandboxGit:
         self._worktrees.discard(Path(path).resolve())
 
     # ------------------------------------------------------------ 校验
-    def _validate(self, args: list[str], cwd: Path) -> None:
+    def _validate(self, args: list[str], cwd: Path,
+                  env: dict[str, str] | None = None) -> None:
         if not args or not all(isinstance(a, str) and a for a in args):
             raise GitError(f"sandbox git needs non-empty argv list, "
                            f"got {args!r}")
@@ -69,6 +76,15 @@ class SandboxGit:
         if head not in _FLAGS:
             raise GitError(f"blocked non-sandbox git command: git "
                            f"{' '.join(args)}")
+        # 会写 index 的命令只允许写在隔离的临时 index 上（GIT_INDEX_FILE
+        # 未指向临时文件就拒绝）：read-tree/apply --cached 直接覆写
+        # cwd 所在仓库的 index，绝不许碰 worktree/源仓库的真 index
+        if head == "read-tree" or (head == "apply" and "--cached" in args):
+            if not (env or {}).get("GIT_INDEX_FILE"):
+                raise GitError(
+                    f"git {head} writes the index — requires isolated "
+                    f"GIT_INDEX_FILE (temp file), refusing to touch the "
+                    f"real one")
         if head == "worktree":
             if len(args) < 2 or args[1] not in {"add", "remove", "prune",
                                                 "list"}:
@@ -95,14 +111,20 @@ class SandboxGit:
 
     # ------------------------------------------------------------ 执行
     def run(self, args: list[str], cwd: Path,
-            timeout: int = _DEFAULT_TIMEOUT) -> str:
-        """校验后执行；失败/超时大声报错，输出截断到 _OUTPUT_CAP。"""
-        self._validate(args, cwd)
+            timeout: int = _DEFAULT_TIMEOUT,
+            env: dict[str, str] | None = None) -> str:
+        """校验后执行；失败/超时大声报错，输出截断到 _OUTPUT_CAP。
+
+        env 叠加在 os.environ 之上，用于隔离 GIT_INDEX_FILE（13E 期望
+        内容物化）。_validate 会拒绝写 index 命令不带隔离 env 的调用。
+        """
+        self._validate(args, cwd, env)
         cmd = ["git", "-c", "core.quotepath=false"] + args
         try:
             proc = subprocess.run(cmd, cwd=str(cwd), capture_output=True,
                                   text=True, timeout=timeout,
-                                  errors="replace")
+                                  errors="replace",
+                                  env={**os.environ, **env} if env else None)
         except subprocess.TimeoutExpired as e:
             raise GitError(f"sandbox git {args[0]} timed out "
                            f"({timeout}s)") from e

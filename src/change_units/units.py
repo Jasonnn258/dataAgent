@@ -88,6 +88,8 @@ def characterize_hunks(diff: CommitDiff, idx: CodeIndex | None, rec: ToolRecorde
         info = HunkInfo(hunk=h, file=h.file,
                         added_file=h.file in added, deleted_file=h.file in deleted)
         for tag, text in h.lines:
+            if tag == "\\":
+                continue   # "\ No newline" 修饰行：不参与 token/串提取
             if tag == "+":
                 info.ui_strings_added += _cjk_strings(text)
             elif tag == "-":

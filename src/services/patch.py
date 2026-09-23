@@ -83,10 +83,11 @@ class PatchService:
             raise DataAgentError(
                 f"hunk too large to reverse: {h.file}#{h.idx} "
                 f"({len(h.lines)} lines)")
-        # 前向：-old +new；反向：-new +old（上下文不动）
+        # 前向：-old +new；反向：-new +old（上下文不动）；
+        # "\ No newline" 修饰行原样保留（它修饰的行翻转后仍带着它）
         header = (f"@@ -{h.new_start},{h.new_lines} "
                   f"+{h.old_start},{h.old_lines} @@")
-        flip = {" ": " ", "+": "-", "-": "+"}
+        flip = {" ": " ", "+": "-", "-": "+", "\\": "\\"}
         return [header] + [flip[tag] + text for tag, text in h.lines]
 
     def _file_section(self, file: str, hunks: list[Hunk]) -> list[str]:
@@ -256,8 +257,10 @@ class PatchService:
         attempt = ws.registry.attach(attempt.execution_id,
                                      actual_patch_path=str(actual_path))
 
-        # ---- 4. 内容级对比：容许 hunk 位置偏移，不容许任何内容/文件越界 ----
-        problems = compare_patches(patch_path, actual_path)
+        # ---- 4. 内容级对比：worktree 文件哈希 == base+proposed 期望哈希 ----
+        problems = content_drift(ws.sandbox, worktree, patch_path.parent,
+                                 attempt.plan.base_commit,
+                                 patch_path, actual_path)
         if problems:
             ws.registry.update_status(
                 attempt.execution_id, "VERIFICATION_FAILED",
@@ -294,6 +297,12 @@ def compare_patches(proposed: Path, actual: Path) -> list[str]:
 
     文件集合与每文件的变更行多重集必须逐字一致：多一个文件、多一行
     改动、少一段回退，都是计划外修改。
+
+    ⚠ 已知假阳性（13E 起主链改用 content_drift）：重复/相似行会让
+    git 的 diff 在多条等价最小对齐里选不同代表行 —— 内容相同、
+    (tag, text) 多重集不同。比对 diff 文本在此场景不可靠，要比就比
+    文件内容本身。保留本函数供行集推理（等价对齐的行文本相同，
+    成员判断不受影响）。
     """
     p_sig = _patch_signature(Path(proposed).read_text(encoding="utf-8"))
     a_sig = _patch_signature(Path(actual).read_text(encoding="utf-8"))
@@ -305,4 +314,53 @@ def compare_patches(proposed: Path, actual: Path) -> list[str]:
     for f in sorted(set(p_sig) & set(a_sig)):
         if p_sig[f] != a_sig[f]:
             problems.append(f"change content differs from plan: {f}")
+    return problems
+
+
+# ------------------------------------------------------------ 内容级核对
+def content_drift(sandbox, worktree: Path, run_dir: Path,
+                  base_commit: str, patch_path: Path,
+                  actual_path: Path) -> list[str]:
+    """worktree 内容 vs base+proposed 的期望内容（blob 哈希级）。
+
+    期望内容物化：隔离临时 index 上 read-tree base + apply --cached
+    patch，ls-files -s 得 {path: blob oid}；worktree 实际内容用
+    hash-object 逐文件取 oid 比对。actual diff 文本只用来取"实际
+    改动的文件面"（含被 patch 删除的文件），不参与内容比对 ——
+    真语义是 worktree 恰等于 base+patch，diff 文本重排无关紧要。
+    """
+    from src.git_history.api import _parse_unified_diff
+
+    env = {"GIT_INDEX_FILE": str(run_dir / ".expected-index")}
+    sandbox.run(["read-tree", base_commit], cwd=worktree, env=env)
+    sandbox.run(["apply", "--cached", str(patch_path)],
+                cwd=worktree, env=env)
+    listing = sandbox.run(["ls-files", "-s"], cwd=worktree, env=env)
+    expected: dict[str, str] = {}
+    for row in listing.splitlines():
+        meta, _, path = row.partition("\t")
+        parts = meta.split()
+        if len(parts) >= 2 and path:
+            expected[path] = parts[1]
+
+    patch_parsed = _parse_unified_diff(
+        Path(patch_path).read_text(encoding="utf-8"))
+    deleted_by_patch = set(patch_parsed["deleted_files"])
+    # read-tree 载入的是整个 base 树：期望集只保留 patch 触到的文件
+    touched = ({h.file for h in patch_parsed["hunks"]}
+               | set(patch_parsed["added_files"]) | deleted_by_patch)
+    expected = {p: oid for p, oid in expected.items() if p in touched}
+    actual_files = {h.file for h in _parse_unified_diff(
+        Path(actual_path).read_text(encoding="utf-8"))["hunks"]}
+
+    problems: list[str] = []
+    for path, oid in sorted(expected.items()):
+        actual_oid = sandbox.run(["hash-object", path],
+                                 cwd=worktree).strip()
+        if actual_oid != oid:
+            problems.append(f"change content differs from plan: {path}")
+    for extra in sorted(actual_files - set(expected) - deleted_by_patch):
+        problems.append(f"file modified outside plan: {extra}")
+    for missing in sorted(set(expected) - actual_files):
+        problems.append(f"planned change missing: {missing}")
     return problems

@@ -176,7 +176,16 @@ def _has_parent(api: GitAPI, sha: str) -> bool:
 
 
 def _parse_unified_diff(raw: str) -> dict:
-    """Parse `git diff` output into hunks/added/deleted/renamed."""
+    """Parse `git diff` output into hunks/added/deleted/renamed.
+
+    body 行按 @@ 头声明的行数"喂饱"式识别：计数没满时一律当 body ——
+    body 行内容本身可能以 ---/+++ 开头（比如被删的行内容是 `-- foo`），
+    只有计数能把它和文件头区分开；吃饱了才回到文件头/新 hunk 语境。
+    旧版只看首字符前缀，曾把删除文件段的 `+++ /dev/null` 吞进上一个
+    hunk 的 body，导致反向 patch 格式损坏（fragment without header）。
+    `\\ No newline at end of file` 修饰行不计行数、原样保留（反向
+    patch 需要它保住文件尾换行语义）。
+    """
     hunks: list[Hunk] = []
     added: list[str] = []
     deleted: list[str] = []
@@ -184,10 +193,30 @@ def _parse_unified_diff(raw: str) -> dict:
     cur_file = None
     cur_hunk: Hunk | None = None
     hunk_idx = 0
+    need_old = need_new = 0
     import re
     hunk_re = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$")
     for line in raw.splitlines():
-        if line.startswith("+++ b/") or line.startswith("--- "):
+        # ---- 先喂当前 hunk：计数没满时一切 body 行（含 ---/+++ 开头）----
+        if cur_hunk is not None:
+            t = line[:1]
+            if t == "\\":
+                # "\ No newline at end of file"：修饰前一行，不计行数
+                cur_hunk.lines.append((t, line[1:]))
+                continue
+            if (need_old > 0 and t in (" ", "-")) or \
+                    (need_new > 0 and t == "+"):
+                cur_hunk.lines.append((t, line[1:]))
+                if t == " ":
+                    need_old -= 1
+                    need_new -= 1
+                elif t == "-":
+                    need_old -= 1
+                else:
+                    need_new -= 1
+                continue
+            cur_hunk = None      # 计数已满：回到文件头/新 hunk 语境
+        if line.startswith("+++ ") or line.startswith("--- "):
             continue  # file names come from diff --git / new file / deleted file lines
         if line.startswith("diff --git "):
             m = re.match(r"diff --git a/(.+) b/(.+)$", line)
@@ -221,7 +250,7 @@ def _parse_unified_diff(raw: str) -> dict:
                 header=line[:200])
             hunks.append(cur_hunk)
             hunk_idx += 1
+            need_old = cur_hunk.old_lines
+            need_new = cur_hunk.new_lines
             continue
-        if cur_hunk is not None and line[:1] in (" ", "+", "-"):
-            cur_hunk.lines.append((line[0], line[1:]))
     return {"hunks": hunks, "added_files": added, "deleted_files": deleted, "renamed": renamed}

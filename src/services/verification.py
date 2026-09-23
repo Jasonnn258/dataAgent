@@ -159,10 +159,14 @@ class VerificationService:
                        "detail": f"{len(plan.forbidden_changes)} "
                                  f"forbidden change(s)"})
 
-        # ---- 3. scope_pass：改动 ⊆ 计划 + actual==proposed ----
-        from src.services.patch import compare_patches
+        # ---- 3. scope_pass：改动 ⊆ 计划 + worktree 内容==期望 ----
+        # 内容比对用 blob 哈希级 content_drift（比对 diff 文本会在等价
+        # 重排下假阳性，见 patch.content_drift 注释）
+        from src.services.patch import content_drift
         out_of_plan = sorted(set(a_sig) - set(plan.target_files))
-        drift = compare_patches(proposed, actual)
+        drift = content_drift(ws.sandbox, Path(attempt.workspace),
+                              ws.runs_root / attempt.execution_id,
+                              plan.base_commit, proposed, actual)
         scope_ok = not out_of_plan and not drift
         checks.append({"check": "scope.files", "pass": not out_of_plan,
                        "detail": f"out-of-plan: {out_of_plan}"})
