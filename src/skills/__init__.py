@@ -22,6 +22,7 @@ from src.skills.coupling_analysis import CouplingAnalysisSkill
 from src.skills.safe_rollback import SafeRollbackSkill
 from src.skills.evidence_verification import EvidenceVerificationSkill
 from src.skills.policy_check import PolicyCheckSkill
+from src.skills.change_unit_label import ChangeUnitLabelSkill
 
 __all__ = ["SKILL_FAILED", "SKILL_PARTIAL", "SKILL_SUCCESS", "SkillResult",
            "SkillSpec", "BaseSkill", "CapabilityGuard", "capability_allowed",
@@ -29,4 +30,5 @@ __all__ = ["SKILL_FAILED", "SKILL_PARTIAL", "SKILL_SUCCESS", "SkillResult",
            "get_skill", "register", "SkillRuntime",
            "ResolveTargetSkill", "BuildTaskViewSkill", "ImpactAnalysisSkill",
            "ChangeUnitAnalysisSkill", "CouplingAnalysisSkill",
-           "SafeRollbackSkill", "EvidenceVerificationSkill", "PolicyCheckSkill"]
+           "SafeRollbackSkill", "EvidenceVerificationSkill", "PolicyCheckSkill",
+           "ChangeUnitLabelSkill"]

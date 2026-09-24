@@ -54,30 +54,44 @@ class SemanticReasoningAdapter:
                               "reason": str(c.get("reason", ""))[:200]})
         return picks
 
-    # ---------------------------------------------- 接口预留（未接线）
-    def label_change_unit(self, diff_summary: str,
-                          hint_terms: list[str]) -> dict:
-        """变更单元语义标签（change_labeling prompt，未启用）。
+    # ---------------------------------------------- 12C 启用：单元标签
+    def label_change_units(self, units: list[dict], hint_terms: list[str],
+                           known_features: list[str]) -> list[dict]:
+        """变更单元语义标签批量版（change_labeling prompt，12C 启用）。
 
-        LLM 不可用/输出不合法 => 确定性退路 other + fallback 标记，
-        绝不因适配器缺位而抛错。
+        输出契约（严格 JSON）：每单元 {unit_id, label, intent,
+        candidate_features, reason}。白名单外 label/intent 归 other；
+        candidate_features 只保留 known_features 里真实存在的名字
+        （不变量：LLM 只能挑已有名字）。LLM 不可用/输出不合法 =>
+        空列表（调用方走确定性路径），绝不因适配器缺位抛错。
         """
-        fallback = {"label": "other", "confidence": 0.0,
-                    "reason": "llm unavailable", "fallback": True}
         if not self.available:
-            return fallback
+            return []
         out = self.llm.chat_json(
             system=change_labeling.SYSTEM_PROMPT,
-            user=change_labeling.user_payload(diff_summary, hint_terms)) or {}
-        label = out.get("label")
-        if label not in change_labeling.LABELS:  # 白名单外归 other
-            label = "other"
-        try:
-            conf = max(0.0, min(1.0, float(out.get("confidence", 0.0))))
-        except (TypeError, ValueError):
-            conf = 0.0
-        return {"label": label, "confidence": conf,
-                "reason": str(out.get("reason", ""))[:200], "fallback": False}
+            user=change_labeling.user_payload(
+                units[:change_labeling.MAX_UNITS], hint_terms,
+                known_features)) or {}
+        known = set(known_features)
+        by_id = {u["unit_id"] for u in units}
+        results: list[dict] = []
+        for item in (out or {}).get("units", []):
+            uid = item.get("unit_id")
+            if uid not in by_id:   # 幻觉 unit_id 直接丢弃
+                continue
+            label = item.get("label")
+            if label not in change_labeling.LABELS:
+                label = "other"
+            intent = item.get("intent")
+            if intent not in change_labeling.INTENTS:
+                intent = "other"
+            feats = [f for f in item.get("candidate_features", [])
+                     if isinstance(f, str) and f in known]
+            results.append({"unit_id": uid, "label": label, "intent": intent,
+                            "candidate_features": feats,
+                            "reason": str(item.get("reason", ""))[:200],
+                            "status": "candidate"})
+        return results
 
     def verify_semantic(self, claim: str, evidence_texts: list[str]) -> dict:
         """finding 语义裁决（semantic_verification prompt，未启用）。

@@ -64,9 +64,9 @@ dataAgent 是一个**默认只读的代码仓库维护框架**：输入"X 改坏
 ┌──────▼──────────────────┐   ┌──────▼───────────────────────────────┐
 │ 确定性服务 ×8             │   │ LLM 语义适配器（唯一 LLM 合法入口）     │
 │ src/services/            │   │ src/llm/semantic_adapter.py           │
-│ resolution  目标解析      │   │  map_features（唯一接线：resolve_target）│
-│ graph_query 路径查询      │   │  label_change_unit / verify_semantic  │
-│ task_view   有界视图      │   │  （预留接口，12B/12C 接线）             │
+│ resolution  目标解析      │   │  map_features（接线：resolve_target）  │
+│ graph_query 路径查询      │   │  label_change_units（接线：12C 标签）  │
+│ task_view   有界视图      │   │  verify_semantic（预留）               │
 │ change      变更事实      │   │ prompts/：公共不变量 + 三个 skill prompt │
 │ evidence    证据注册表    │   │ 「LLM 只能挑候选，不能铸造确定性事实」     │
 │ decision    决策记忆      │   └──────────────────────────────────────┘
@@ -560,6 +560,7 @@ query="登录改坏了，回退但保留同 commit 的系统标题"
 | `safe_rollback.arbitrate(...)` | 纯函数：双词表命中仲裁、平局策略外置、keep 命中钉住 commit（agent/skill 共用真源） |
 | `EvidenceVerificationSkill.evidence_verification` | finding 三档裁决：确定性路径可升 verified；语义证据只能佐证 |
 | `PolicyCheckSkill.policy_check` | 组装 gate 上下文跑规则门（decision 层关时显式 UNGATED） |
+| `ChangeUnitLabelSkill.change_unit_label` | 12C：ChangeUnit 批量 LLM 语义标签（label/intent/candidate_features），第二个 LLM 白名单点；输出只铸 SEMANTIC_MAPPING candidate evidence，绝不写回单元确定性 props；unit id 双形态（cu: 前缀/无前缀）都容错 |
 
 ### 4.12 src/agents/ — Agent 层
 
@@ -585,11 +586,12 @@ query="登录改坏了，回退但保留同 commit 的系统标题"
 | `LLMClient.__init__(cfg)` | OpenAI 兼容客户端（未配置=不可用；配置了但初始化失败=LLMError）；`usage` 字典累计端点回执的 token 用量（12B 实验指标，缺回执不虚造） |
 | `LLMClient.chat_json(system, user)` | 单次 JSON 模式调用（截断到上下文上限；解析容错 ```json 围栏） |
 | `SemanticReasoningAdapter.map_features(features, query)` | query → feature 候选；幻觉 id 直接丢弃（不变量：不创造不存在的 feature） |
-| `SemanticReasoningAdapter.label_change_unit(...)` | 变更单元语义标签（预留，12C 接线）；白名单外归 other |
+| `SemanticReasoningAdapter.label_change_units(units, hints, feats)` | 12C 批量单元标签：幻觉 unit_id 丢弃、label/intent 白名单外归 other、candidate_features 只留图内 feature 名（双重图验证），输出恒带 status=candidate |
 | `SemanticReasoningAdapter.verify_semantic(...)` | finding 语义裁决（预留）；证据不足归 unresolved |
 | `prompts/invariants.with_invariants(prompt)` | 公共不变量拼到 skill prompt 尾部 |
 | `prompts/skills/semantic_mapping.py` | feature 映射 prompt + payload 构造（MAX_CANDIDATES=3） |
-| `prompts/skills/change_labeling.py` / `semantic_verification.py` | 预留两路 prompt（标签白名单 / 裁决白名单） |
+| `prompts/skills/change_labeling.py` | 12C 标签 prompt：批量严格 JSON（≤12 单元/批），label/intent 白名单与图内 feature 名单在 payload 里给足 |
+| `prompts/skills/semantic_verification.py` | 预留裁决 prompt（白名单 verdict） |
 
 ### 4.14 src/tasks/ + src/eval/ — Phase 1-5 四模式轨
 
@@ -623,6 +625,9 @@ query="登录改坏了，回退但保留同 commit 的系统标题"
 | `real_repo/report.summarize` / `write_markdown` / `write_jsonl` | JSONL 原始 + Markdown 汇总（失败案例单列 + 执行环两段：analysis/oracle） |
 | `real_repo/semantic_ablation.SemanticAblation` | 12B 消融：raw（12A 原状）/ d0（通用播种+词面）/ d1（+LLM 挑选，幻觉被图验证丢弃）三臂 resolve_target 对照 |
 | `real_repo/semantic_ablation.score_rows` | 指标：target_recall@1/@3、feature_mapping_accuracy、unresolved_rate、llm 用量（calls/tokens） |
+| `real_repo/label_ablation.LabelAblation` | 12C 消融：c0（确定性 characterize）/ c1（resolve+标签都带 LLM，复合）/ c1r（resolve 确定性、只有标签重打分带 LLM，隔离净效应）；标签面 + 回退面双度量 |
+| `real_repo/label_ablation.label_gold_units(...)` | gold 单元标定：47 条人工标注对照 C0/C1 的 label/intent/feature 三精度（C1 输出只作 candidate evidence，runner 归一无前缀 unit id 对齐 gold） |
+| `real_repo/gold_intents.jsonl` | 12C 人工标注：chalk 1 + express 3 + zustand v5 release 43 单元的 gold_label/gold_intent |
 
 ### 4.16 src/maintenance/ — Phase 13 执行环（沙箱 + 晋升）
 

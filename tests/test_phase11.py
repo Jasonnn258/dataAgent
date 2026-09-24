@@ -21,7 +21,7 @@ DEMO_KEEP = "保留同 commit 中已经改好的系统标题"
 
 SKILL_NAMES = {"resolve_target", "build_task_view", "impact_analysis",
                "change_unit_analysis", "coupling_analysis", "safe_rollback",
-               "evidence_verification", "policy_check",
+               "evidence_verification", "policy_check", "change_unit_label",
                "build_execution_plan", "prepare_execution",
                "build_rollback_patch", "apply_patch",
                "validate_execution", "verify_execution", "promote_patch"}
@@ -67,12 +67,13 @@ class TestSkillContracts:
             assert s.allowed_capabilities, name
             assert s.preconditions and s.success_conditions, name
 
-    def test_llm_whitelist_first_version(self):
-        """11H 前置：默认全部 forbidden，唯一例外 ResolveTargetSkill。"""
+    def test_llm_whitelist(self):
+        """11H 前置 + 12C 扩围：默认 forbidden，仅 resolve_target 与
+        change_unit_label（12C）两个合法 LLM 接线点。"""
         from src.skills import default_registry
         allowed = {n for n, sk in default_registry().items()
                    if sk.spec.semantic_reasoning == "allowed"}
-        assert allowed == {"resolve_target"}
+        assert allowed == {"resolve_target", "change_unit_label"}
 
     def test_duplicate_registration_raises(self):
         from src.skills.base import BaseSkill

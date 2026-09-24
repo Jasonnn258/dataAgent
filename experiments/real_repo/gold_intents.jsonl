@@ -1,0 +1,47 @@
+{"unit_id": "5729845f-U1", "repo": "chalk", "commit": "5729845f", "gold_label": "ui", "gold_intent": "perf", "note": "Improve performance — 颜色库核心 internals；domain 按样式域给 ui，意图 perf"}
+{"unit_id": "18e5985b-U1", "repo": "express", "commit": "18e5985b", "gold_label": "docs", "gold_intent": "docs", "note": "History.md 变更日志"}
+{"unit_id": "18e5985b-U2", "repo": "express", "commit": "18e5985b", "gold_label": "other", "gold_intent": "bugfix", "note": "res.send 编码修复本体 lib/response.js"}
+{"unit_id": "18e5985b-U3", "repo": "express", "commit": "18e5985b", "gold_label": "other", "gold_intent": "test", "note": "res.send 回归测试"}
+{"unit_id": "e247220e-U1", "repo": "zustand", "commit": "e247220e", "gold_label": "other", "gold_intent": "release", "note": "v5 release：eslintrc"}
+{"unit_id": "e247220e-U2", "repo": "zustand", "commit": "e247220e", "gold_label": "other", "gold_intent": "release", "note": "v5 release：workflow"}
+{"unit_id": "e247220e-U3", "repo": "zustand", "commit": "e247220e", "gold_label": "other", "gold_intent": "release", "note": "v5 release：构建+文档混装"}
+{"unit_id": "e247220e-U4", "repo": "zustand", "commit": "e247220e", "gold_label": "other", "gold_intent": "release", "note": "v5 release：workflow"}
+{"unit_id": "e247220e-U5", "repo": "zustand", "commit": "e247220e", "gold_label": "other", "gold_intent": "release", "note": "v5 release：workflow"}
+{"unit_id": "e247220e-U6", "repo": "zustand", "commit": "e247220e", "gold_label": "other", "gold_intent": "release", "note": "v5 release：workflow"}
+{"unit_id": "e247220e-U7", "repo": "zustand", "commit": "e247220e", "gold_label": "other", "gold_intent": "release", "note": "v5 release：workflow"}
+{"unit_id": "e247220e-U8", "repo": "zustand", "commit": "e247220e", "gold_label": "other", "gold_intent": "release", "note": "v5 release：workflow"}
+{"unit_id": "e247220e-U9", "repo": "zustand", "commit": "e247220e", "gold_label": "other", "gold_intent": "release", "note": "v5 release：workflow"}
+{"unit_id": "e247220e-U10", "repo": "zustand", "commit": "e247220e", "gold_label": "other", "gold_intent": "release", "note": "v5 release：workflow"}
+{"unit_id": "e247220e-U11", "repo": "zustand", "commit": "e247220e", "gold_label": "deps", "gold_intent": "release", "note": "v5 release：pnpm-lock"}
+{"unit_id": "e247220e-U12", "repo": "zustand", "commit": "e247220e", "gold_label": "deps", "gold_intent": "release", "note": "v5 release：pnpm-lock"}
+{"unit_id": "e247220e-U13", "repo": "zustand", "commit": "e247220e", "gold_label": "deps", "gold_intent": "release", "note": "v5 release：pnpm-lock"}
+{"unit_id": "e247220e-U14", "repo": "zustand", "commit": "e247220e", "gold_label": "deps", "gold_intent": "release", "note": "v5 release：pnpm-lock"}
+{"unit_id": "e247220e-U15", "repo": "zustand", "commit": "e247220e", "gold_label": "deps", "gold_intent": "release", "note": "v5 release：pnpm-lock"}
+{"unit_id": "e247220e-U16", "repo": "zustand", "commit": "e247220e", "gold_label": "deps", "gold_intent": "release", "note": "v5 release：pnpm-lock"}
+{"unit_id": "e247220e-U17", "repo": "zustand", "commit": "e247220e", "gold_label": "deps", "gold_intent": "release", "note": "v5 release：pnpm-lock"}
+{"unit_id": "e247220e-U18", "repo": "zustand", "commit": "e247220e", "gold_label": "deps", "gold_intent": "release", "note": "v5 release：pnpm-lock"}
+{"unit_id": "e247220e-U19", "repo": "zustand", "commit": "e247220e", "gold_label": "other", "gold_intent": "release", "note": "v5 release：rollup 构建配置"}
+{"unit_id": "e247220e-U20", "repo": "zustand", "commit": "e247220e", "gold_label": "other", "gold_intent": "release", "note": "v5 release：rollup 构建配置"}
+{"unit_id": "e247220e-U21", "repo": "zustand", "commit": "e247220e", "gold_label": "other", "gold_intent": "release", "note": "v5 release：rollup 构建配置"}
+{"unit_id": "e247220e-U22", "repo": "zustand", "commit": "e247220e", "gold_label": "other", "gold_intent": "release", "note": "v5 release：rollup 构建配置"}
+{"unit_id": "e247220e-U23", "repo": "zustand", "commit": "e247220e", "gold_label": "other", "gold_intent": "release", "note": "v5 release：rollup 构建配置"}
+{"unit_id": "e247220e-U24", "repo": "zustand", "commit": "e247220e", "gold_label": "other", "gold_intent": "release", "note": "v5 release：src/context.ts API 迁移"}
+{"unit_id": "e247220e-U25", "repo": "zustand", "commit": "e247220e", "gold_label": "other", "gold_intent": "release", "note": "v5 release：src/index.ts 导出面"}
+{"unit_id": "e247220e-U26", "repo": "zustand", "commit": "e247220e", "gold_label": "other", "gold_intent": "release", "note": "v5 release：devtools 中间件"}
+{"unit_id": "e247220e-U27", "repo": "zustand", "commit": "e247220e", "gold_label": "other", "gold_intent": "release", "note": "v5 release：immer 中间件"}
+{"unit_id": "e247220e-U28", "repo": "zustand", "commit": "e247220e", "gold_label": "other", "gold_intent": "release", "note": "v5 release：immer 中间件"}
+{"unit_id": "e247220e-U29", "repo": "zustand", "commit": "e247220e", "gold_label": "other", "gold_intent": "release", "note": "v5 release：persist 中间件"}
+{"unit_id": "e247220e-U30", "repo": "zustand", "commit": "e247220e", "gold_label": "other", "gold_intent": "release", "note": "v5 release：react/vanilla 核心+测试"}
+{"unit_id": "e247220e-U31", "repo": "zustand", "commit": "e247220e", "gold_label": "other", "gold_intent": "release", "note": "v5 release：shallow 绑定"}
+{"unit_id": "e247220e-U32", "repo": "zustand", "commit": "e247220e", "gold_label": "other", "gold_intent": "release", "note": "v5 release：src/shallow.ts"}
+{"unit_id": "e247220e-U33", "repo": "zustand", "commit": "e247220e", "gold_label": "other", "gold_intent": "release", "note": "v5 release：traditional 绑定"}
+{"unit_id": "e247220e-U35", "repo": "zustand", "commit": "e247220e", "gold_label": "other", "gold_intent": "release", "note": "v5 release：devtools 测试"}
+{"unit_id": "e247220e-U36", "repo": "zustand", "commit": "e247220e", "gold_label": "other", "gold_intent": "release", "note": "v5 release：devtools 测试"}
+{"unit_id": "e247220e-U37", "repo": "zustand", "commit": "e247220e", "gold_label": "other", "gold_intent": "release", "note": "v5 release：devtools 测试"}
+{"unit_id": "e247220e-U38", "repo": "zustand", "commit": "e247220e", "gold_label": "other", "gold_intent": "release", "note": "v5 release：devtools 测试"}
+{"unit_id": "e247220e-U39", "repo": "zustand", "commit": "e247220e", "gold_label": "other", "gold_intent": "release", "note": "v5 release：devtools 测试"}
+{"unit_id": "e247220e-U40", "repo": "zustand", "commit": "e247220e", "gold_label": "other", "gold_intent": "release", "note": "v5 release：devtools 测试"}
+{"unit_id": "e247220e-U41", "repo": "zustand", "commit": "e247220e", "gold_label": "other", "gold_intent": "release", "note": "v5 release：devtools 测试"}
+{"unit_id": "e247220e-U42", "repo": "zustand", "commit": "e247220e", "gold_label": "other", "gold_intent": "release", "note": "v5 release：devtools 测试"}
+{"unit_id": "e247220e-U43", "repo": "zustand", "commit": "e247220e", "gold_label": "other", "gold_intent": "release", "note": "v5 release：devtools 测试"}
+{"unit_id": "e247220e-U44", "repo": "zustand", "commit": "e247220e", "gold_label": "other", "gold_intent": "release", "note": "v5 release：types 测试"}

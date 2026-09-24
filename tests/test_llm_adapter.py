@@ -92,18 +92,24 @@ class TestAdapterInvariants:
         class Dead:
             available = False
         ad = SemanticReasoningAdapter(Dead())
-        label = ad.label_change_unit("rename title", ["title"])
-        assert label["label"] == "other" and label["fallback"] is True
+        # 12C 批量版契约：LLM 缺位 => 空列表（调用方走确定性路径）
+        assert ad.label_change_units(
+            [{"unit_id": "u1", "summary": "rename title"}], ["title"], []) == []
         verdict = ad.verify_semantic("claim", ["evidence text"])
         assert verdict["verdict"] == "unresolved" and verdict["fallback"]
 
     def test_label_and_verdict_whitelists_enforced(self):
         from src.llm import SemanticReasoningAdapter
-        llm = FakeLLM(out={"label": "finance", "confidence": 9,
-                           "reason": "junk"})
+        llm = FakeLLM(out={"units": [
+            {"unit_id": "u1", "label": "finance", "intent": "hack",
+             "candidate_features": ["Ghost"], "reason": "junk"}]})
         ad = SemanticReasoningAdapter(llm)
-        assert ad.label_change_unit("d", ["t"])["label"] == "other"
-        assert ad.label_change_unit("d", ["t"])["confidence"] == 1.0  # 越界截断
+        got = ad.label_change_units([{"unit_id": "u1", "summary": "d"}],
+                                    ["t"], ["Real"])
+        # 白名单外归 other + 幻觉 feature 被滤（12C 双重图验证）
+        assert got == [{"unit_id": "u1", "label": "other", "intent": "other",
+                        "candidate_features": [], "reason": "junk",
+                        "status": "candidate"}]
         llm2 = FakeLLM(out={"verdict": "definitely", "reason": "junk"})
         assert SemanticReasoningAdapter(llm2).verify_semantic(
             "claim", ["ev"])["verdict"] == "unresolved"
